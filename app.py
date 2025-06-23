@@ -135,6 +135,7 @@ class CompleteWeatherProcessor:
         status_text = st.empty()
         
         total_files = len(dat_files)
+        self.file_processing_info = []  # Lista para armazenar info de cada arquivo
         
         for i, uploaded_file in enumerate(dat_files):
             status_text.text(f"Processando arquivo {i+1}/{total_files}: {uploaded_file.name}")
@@ -144,6 +145,9 @@ class CompleteWeatherProcessor:
                 uploaded_file.seek(0)  # Reset file pointer
                 data = pd.read_csv(uploaded_file, skiprows=4, parse_dates=[0])
 
+                # Contar registros
+                total_records = len(data)
+                
                 # Renomear colunas (igual ao código original do Colab)
                 data.columns = [
                     'TIMESTAMP', 'RECORD',
@@ -159,26 +163,117 @@ class CompleteWeatherProcessor:
                 ]
 
                 data.set_index('TIMESTAMP', inplace=True)
-
+                
+                # Obter informações do período
+                start_date = data.index.min()
+                end_date = data.index.max()
+                days_span = (end_date - start_date).days + 1
+                
                 # Processar para análises mensais E diárias
-                self._process_monthly_and_daily_data(data)
+                processed_days = self._process_monthly_and_daily_data(data)
+                
+                # Armazenar informações do arquivo
+                file_info = {
+                    'arquivo': uploaded_file.name,
+                    'registros': total_records,
+                    'periodo_inicio': start_date.strftime('%Y-%m-%d %H:%M'),
+                    'periodo_fim': end_date.strftime('%Y-%m-%d %H:%M'),
+                    'dias_span': days_span,
+                    'dias_processados': processed_days,
+                    'status': '✅ Processado'
+                }
+                self.file_processing_info.append(file_info)
+                
+                # Mostrar progresso detalhado
+                st.success(f"✅ {uploaded_file.name}: {total_records} registros, {processed_days} dias processados")
 
             except Exception as e:
-                st.error(f"Erro ao processar {uploaded_file.name}: {str(e)}")
+                # Armazenar informações de erro
+                error_info = {
+                    'arquivo': uploaded_file.name,
+                    'registros': 0,
+                    'periodo_inicio': 'N/A',
+                    'periodo_fim': 'N/A',
+                    'dias_span': 0,
+                    'dias_processados': 0,
+                    'status': f'❌ Erro: {str(e)}'
+                }
+                self.file_processing_info.append(error_info)
+                st.error(f"❌ Erro ao processar {uploaded_file.name}: {str(e)}")
                 continue
             
             progress_bar.progress((i + 1) / total_files)
 
         status_text.text("Processamento concluído!")
         
+        # Mostrar resumo detalhado dos arquivos processados
+        self._show_file_processing_summary()
+        
         if self.dados_processados:
             return True
         else:
             return False
 
+    def _show_file_processing_summary(self):
+        """Mostra resumo detalhado do processamento de cada arquivo"""
+        if hasattr(self, 'file_processing_info') and self.file_processing_info:
+            st.markdown("---")
+            st.markdown("### 📄 Resumo do Processamento por Arquivo")
+            
+            # Criar DataFrame com as informações
+            df_files = pd.DataFrame(self.file_processing_info)
+            
+            # Calcular totais
+            total_records = df_files['registros'].sum()
+            total_files_success = len([f for f in self.file_processing_info if '✅' in f['status']])
+            total_files_error = len([f for f in self.file_processing_info if '❌' in f['status']])
+            
+            # Mostrar métricas gerais
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>📁 Arquivos Processados</h4>
+                    <h2>{total_files_success}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>❌ Arquivos com Erro</h4>
+                    <h2>{total_files_error}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>📊 Total de Registros</h4>
+                    <h2>{total_records:,}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Tabela detalhada
+            st.markdown("#### 📋 Detalhes por Arquivo")
+            
+            # Renomear colunas para exibição
+            df_display = df_files.copy()
+            df_display.columns = [
+                'Arquivo', 'Registros', 'Início', 'Fim', 
+                'Dias (Span)', 'Dias Processados', 'Status'
+            ]
+            
+            # Formatar números
+            df_display['Registros'] = df_display['Registros'].apply(lambda x: f"{x:,}" if x > 0 else "0")
+            
+            st.dataframe(df_display, use_container_width=True)
+
     def _process_monthly_and_daily_data(self, data):
         """
         Processa dados para análises mensais E diárias simultaneamente
+        Retorna o número de dias processados
         """
         mes_numero = data.index[0].month
         ano = data.index[0].year
@@ -192,6 +287,8 @@ class CompleteWeatherProcessor:
 
         # Processar dados diários (análise mensal)
         data['date'] = data.index.date
+        days_processed = 0
+        
         for date in data['date'].unique():
             day_data = data[data['date'] == date]
             dia_numero = date.day
@@ -205,6 +302,10 @@ class CompleteWeatherProcessor:
             if dia_numero not in self.dados_processados[dataset_key]['daily_data']:
                 self.dados_processados[dataset_key]['daily_data'][dia_numero] = {}
             self.dados_processados[dataset_key]['daily_data'][dia_numero].update(hourly_data)
+            
+            days_processed += 1
+        
+        return days_processed
 
     def _process_hourly_data_for_day(self, day_data):
         """Processa dados horários para um dia específico"""
