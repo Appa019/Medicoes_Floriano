@@ -140,27 +140,12 @@ class CompleteWeatherProcessor:
             status_text.text(f"Processando arquivo {i+1}/{total_files}: {uploaded_file.name}")
             
             try:
-                # Ler arquivo .dat
-                content = uploaded_file.read().decode('utf-8')
-                lines = content.split('\n')
-                
-                # Pular as primeiras 4 linhas (cabeçalho)
-                data_lines = lines[4:]
-                
-                # Criar DataFrame
-                data_rows = []
-                for line in data_lines:
-                    if line.strip():
-                        parts = line.split(',')
-                        if len(parts) >= 36:  # Verificar se tem todas as colunas
-                            data_rows.append(parts)
-                
-                if not data_rows:
-                    st.error(f"Arquivo {uploaded_file.name} não contém dados válidos")
-                    continue
-                
-                # Criar DataFrame
-                columns = [
+                # Ler arquivo .dat usando pandas diretamente (como no Colab)
+                uploaded_file.seek(0)  # Reset file pointer
+                data = pd.read_csv(uploaded_file, skiprows=4, parse_dates=[0])
+
+                # Renomear colunas (igual ao código original do Colab)
+                data.columns = [
                     'TIMESTAMP', 'RECORD',
                     'Ane_Min', 'Ane_Max', 'Ane_Avg', 'Ane_Std',
                     'Temp_Min', 'Temp_Max', 'Temp_Avg', 'Temp_Std',
@@ -172,17 +157,8 @@ class CompleteWeatherProcessor:
                     'LoggTemp_Min', 'LoggTemp_Max', 'LoggTemp_Avg', 'LoggTemp_Std',
                     'LitBatt_Min', 'LitBatt_Max', 'LitBatt_Avg', 'LitBatt_Std'
                 ]
-                
-                data = pd.DataFrame(data_rows, columns=columns)
-                
-                # Converter timestamp
-                data['TIMESTAMP'] = pd.to_datetime(data['TIMESTAMP'])
+
                 data.set_index('TIMESTAMP', inplace=True)
-                
-                # Converter colunas numéricas
-                numeric_columns = [col for col in data.columns if col != 'RECORD']
-                for col in numeric_columns:
-                    data[col] = pd.to_numeric(data[col], errors='coerce')
 
                 # Processar para análises mensais E diárias
                 self._process_monthly_and_daily_data(data)
