@@ -1,5 +1,7 @@
 🌤️ Medições Usina Geradora Floriano
 
+https://medicoesflorianocsn.streamlit.app
+
 Processador Completo de Dados Meteorológicos
 
 Este aplicativo Streamlit foi desenvolvido para processar dados meteorológicos da Usina Geradora Floriano, realizando análises mensais e diárias de forma automatizada. O sistema processa arquivos de dados (.dat) e atualiza planilhas Excel com estatísticas detalhadas.
