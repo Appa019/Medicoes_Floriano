@@ -101,7 +101,7 @@ st.markdown("""
 class CompleteWeatherProcessor:
     """
     Processador completo de dados meteorológicos
-    Realiza automaticamente análises mensais E diárias
+    Realiza automaticamente análises mensais E diárias com 24h garantidas
     """
 
     def __init__(self):
@@ -273,10 +273,12 @@ class CompleteWeatherProcessor:
     def _process_monthly_and_daily_data(self, data):
         """
         Processa dados para análises mensais E diárias simultaneamente
-        Retorna o número de dias processados
+        NOVA LÓGICA: Garante 24h completas para cada dia
         """
-        mes_numero = data.index[0].month
-        ano = data.index[0].year
+        # Extrair ano e mês do primeiro timestamp
+        first_timestamp = data.index[0]
+        mes_numero = first_timestamp.month
+        ano = first_timestamp.year
         dataset_key = f"{ano}-{mes_numero:02d}"
 
         if dataset_key not in self.dados_processados:
@@ -285,7 +287,7 @@ class CompleteWeatherProcessor:
                 'daily_data': {}     # Para análise diária
             }
 
-        # Processar dados diários (análise mensal)
+        # NOVA LÓGICA: Processar por data completa
         data['date'] = data.index.date
         days_processed = 0
         
@@ -297,40 +299,60 @@ class CompleteWeatherProcessor:
             stats = self._calculate_daily_statistics(day_data)
             self.dados_processados[dataset_key]['monthly_data'][dia_numero] = stats
 
-            # Dados horários para análise diária
-            hourly_data = self._process_hourly_data_for_day(day_data)
+            # NOVA FUNCIONALIDADE: Dados horários COMPLETOS (24h garantidas)
+            hourly_data_complete = self._process_complete_24h_data(day_data)
             if dia_numero not in self.dados_processados[dataset_key]['daily_data']:
                 self.dados_processados[dataset_key]['daily_data'][dia_numero] = {}
-            self.dados_processados[dataset_key]['daily_data'][dia_numero].update(hourly_data)
+            self.dados_processados[dataset_key]['daily_data'][dia_numero] = hourly_data_complete
             
             days_processed += 1
         
         return days_processed
 
-    def _process_hourly_data_for_day(self, day_data):
-        """Processa dados horários para um dia específico"""
+    def _process_complete_24h_data(self, day_data):
+        """
+        NOVA FUNÇÃO: Processa dados garantindo 24 horas completas (00:00 a 23:00)
+        Regras implementadas:
+        - Registros de 10:00-10:50 = hora 10:00
+        - Média dos 5 registros (a cada 10min)
+        - Se não há dados na hora = 0
+        """
         day_data['hour'] = day_data.index.hour
-        hourly_averages = {}
+        day_data['minute'] = day_data.index.minute
+        
+        # Dicionário para armazenar dados das 24 horas
+        hourly_complete = {}
 
+        # Processar TODAS as 24 horas (00 a 23)
         for hour in range(24):
-            hour_data = day_data[day_data['hour'] == hour]
+            # Filtrar registros da hora atual (00:00 a 00:50, 01:00 a 01:50, etc.)
+            hour_records = day_data[
+                (day_data['hour'] == hour) & 
+                (day_data['minute'].isin([0, 10, 20, 30, 40, 50]))
+            ]
 
-            if len(hour_data) > 0:
-                hourly_averages[f"{hour:02d}:00"] = {
-                    'Temperatura': round(hour_data['Temp_Avg'].mean(), 2),
-                    'Piranometro_1': round(hour_data['Pir1_Avg'].mean() / 1000, 3),
-                    'Piranometro_2': round(hour_data['Pir2_Avg'].mean() / 1000, 3),
-                    'Piranometro_Alab': round(hour_data['PirALB_Avg'].mean() / 1000, 3),
-                    'Umidade_Relativa': round(hour_data['RH_Avg'].mean(), 2),
-                    'Velocidade_Vento': round(hour_data['Ane_Avg'].mean(), 2)
+            if len(hour_records) > 0:
+                # Calcular médias dos registros disponíveis na hora
+                hourly_complete[f"{hour:02d}:00"] = {
+                    'Temperatura': round(hour_records['Temp_Avg'].mean(), 2),
+                    'Piranometro_1': round(hour_records['Pir1_Avg'].mean() / 1000, 3),
+                    'Piranometro_2': round(hour_records['Pir2_Avg'].mean() / 1000, 3),
+                    'Piranometro_Alab': round(hour_records['PirALB_Avg'].mean() / 1000, 3),
+                    'Umidade_Relativa': round(hour_records['RH_Avg'].mean(), 2),
+                    'Velocidade_Vento': round(hour_records['Ane_Avg'].mean(), 2)
                 }
             else:
-                hourly_averages[f"{hour:02d}:00"] = {
-                    'Temperatura': 0, 'Piranometro_1': 0, 'Piranometro_2': 0,
-                    'Piranometro_Alab': 0, 'Umidade_Relativa': 0, 'Velocidade_Vento': 0
+                # NOVA REGRA: Se não há dados na hora, preencher com 0
+                hourly_complete[f"{hour:02d}:00"] = {
+                    'Temperatura': 0,
+                    'Piranometro_1': 0,
+                    'Piranometro_2': 0,
+                    'Piranometro_Alab': 0,
+                    'Umidade_Relativa': 0,
+                    'Velocidade_Vento': 0
                 }
 
-        return hourly_averages
+        return hourly_complete
 
     def _calculate_daily_statistics(self, data):
         """Calcula estatísticas diárias para análise mensal"""
@@ -405,12 +427,12 @@ class CompleteWeatherProcessor:
                     except Exception as e:
                         return False, f"Erro na análise mensal: {e}"
 
-                # ANÁLISE DIÁRIA
+                # ANÁLISE DIÁRIA (NOVA LÓGICA COM 24H GARANTIDAS)
                 aba_diaria = self._find_sheet(wb.sheetnames, mes_numero, "Diaria")
                 if aba_diaria:
                     try:
                         ws_diaria = wb[aba_diaria]
-                        dias_diario = self._update_daily_data(ws_diaria, month_data['daily_data'])
+                        dias_diario = self._update_daily_data_complete_24h(ws_diaria, month_data['daily_data'])
 
                         if aba_diaria not in self.abas_diarias_atualizadas:
                             self.abas_diarias_atualizadas.append(aba_diaria)
@@ -425,7 +447,7 @@ class CompleteWeatherProcessor:
             status_text.text("Atualização concluída!")
 
             if sucesso_mensal > 0 and sucesso_diario > 0:
-                return True, f"Sucesso! Análise Mensal: {sucesso_mensal} dias, Análise Diária: {sucesso_diario} dias"
+                return True, f"Sucesso! Análise Mensal: {sucesso_mensal} dias, Análise Diária: {sucesso_diario} dias (24h completas)"
             else:
                 return False, "Nenhum dado foi atualizado"
 
@@ -523,21 +545,36 @@ class CompleteWeatherProcessor:
 
         return dias_atualizados
 
-    def _update_daily_data(self, ws, daily_data):
-        """Atualiza dados da análise diária"""
+    def _update_daily_data_complete_24h(self, ws, daily_data):
+        """
+        NOVA FUNÇÃO: Atualiza dados da análise diária garantindo 24h completas
+        """
         dias_atualizados = 0
 
         for dia_numero, day_hourly_data in daily_data.items():
-            for hour_str, hour_data in day_hourly_data.items():
-                hour_num = int(hour_str[:2])
-                row_num = hour_num + 3  # 00:00 = linha 3
+            # Garantir que temos TODAS as 24 horas (00:00 a 23:00)
+            for hour in range(24):
+                hour_str = f"{hour:02d}:00"
+                row_num = hour + 3  # 00:00 = linha 3, 01:00 = linha 4, etc.
 
-                if row_num < 3:
-                    continue
+                # Usar dados se existirem, senão usar 0
+                if hour_str in day_hourly_data:
+                    hour_data = day_hourly_data[hour_str]
+                else:
+                    # GARANTIA: Se não há dados para a hora, preencher com 0
+                    hour_data = {
+                        'Temperatura': 0,
+                        'Piranometro_1': 0,
+                        'Piranometro_2': 0,
+                        'Piranometro_Alab': 0,
+                        'Umidade_Relativa': 0,
+                        'Velocidade_Vento': 0
+                    }
 
+                # Atualizar cada variável na planilha
                 for variable, value in hour_data.items():
                     col_letter = self._get_column_for_variable_and_day(variable, dia_numero)
-                    if col_letter and row_num != 2:
+                    if col_letter:
                         try:
                             ws[f'{col_letter}{row_num}'] = value
                         except:
@@ -577,21 +614,22 @@ class CompleteWeatherProcessor:
             total_days += dias_no_mes
             summary_data.append({
                 'Mês/Ano': f"{mes}/{ano}",
-                'Dias Processados': dias_no_mes
+                'Dias Processados': dias_no_mes,
+                'Horas Garantidas': f"{dias_no_mes * 24}h"  # NOVA INFO
             })
 
         return summary_data, total_days
 
     def show_data_preview(self):
-        """Mostra preview detalhada dos dados processados"""
+        """Mostra preview detalhada dos dados processados com info de 24h"""
         if not self.dados_processados:
             return
         
         st.markdown("---")
-        st.markdown("### 🔍 Preview dos Dados Processados")
+        st.markdown("### 🔍 Preview dos Dados Processados (24h Garantidas)")
         
         # Tabs para diferentes visualizações
-        tab1, tab2, tab3, tab4 = st.tabs(["📊 Estatísticas Gerais", "📈 Gráficos", "📋 Dados Mensais", "⏰ Dados Horários"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 Estatísticas Gerais", "📈 Gráficos", "📋 Dados Mensais", "⏰ Dados Horários (24h)"])
         
         with tab1:
             self._show_general_statistics()
@@ -603,7 +641,7 @@ class CompleteWeatherProcessor:
             self._show_monthly_data_preview()
         
         with tab4:
-            self._show_hourly_data_preview()
+            self._show_hourly_data_preview_complete()
 
     def _show_general_statistics(self):
         """Mostra estatísticas gerais dos dados"""
@@ -735,10 +773,12 @@ class CompleteWeatherProcessor:
         except Exception as e:
             st.error(f"Erro ao mostrar dados mensais: {str(e)}")
 
-    def _show_hourly_data_preview(self):
-        """Mostra preview dos dados horários"""
+    def _show_hourly_data_preview_complete(self):
+        """
+        NOVA FUNÇÃO: Mostra preview dos dados horários com garantia de 24h
+        """
         try:
-            st.markdown("#### ⏰ Dados de Análise Diária (Horários)")
+            st.markdown("#### ⏰ Dados de Análise Diária (24h Garantidas)")
             
             # Seletores
             available_months = list(self.dados_processados.keys())
@@ -756,26 +796,74 @@ class CompleteWeatherProcessor:
                 if selected_month in self.dados_processados and selected_day in self.dados_processados[selected_month]['daily_data']:
                     day_data = self.dados_processados[selected_month]['daily_data'][selected_day]
                     
-                    # Preparar dados horários
+                    # Verificar se temos 24 horas completas
+                    total_horas = len(day_data)
+                    horas_com_dados = len([h for h, d in day_data.items() if any(v != 0 for v in d.values())])
+                    horas_zeradas = total_horas - horas_com_dados
+                    
+                    # Mostrar estatísticas das 24h
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <h4>⏰ Total de Horas</h4>
+                            <h2>{total_horas}/24</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <h4>📊 Horas com Dados</h4>
+                            <h2>{horas_com_dados}</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col3:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <h4>🔢 Horas Zeradas</h4>
+                            <h2>{horas_zeradas}</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Preparar dados horários para tabela (TODAS as 24 horas)
                     hourly_table = []
-                    for hour, data in day_data.items():
+                    for hour in range(24):
+                        hour_str = f"{hour:02d}:00"
+                        if hour_str in day_data:
+                            data = day_data[hour_str]
+                        else:
+                            # Garantir que sempre temos dados (mesmo que zerados)
+                            data = {
+                                'Temperatura': 0,
+                                'Piranometro_1': 0,
+                                'Piranometro_2': 0,
+                                'Piranometro_Alab': 0,
+                                'Umidade_Relativa': 0,
+                                'Velocidade_Vento': 0
+                            }
+                        
                         hourly_table.append({
-                            'Hora': hour,
+                            'Hora': hour_str,
                             'Temperatura': data['Temperatura'],
                             'Piranômetro 1': data['Piranometro_1'],
                             'Piranômetro 2': data['Piranometro_2'],
                             'Piranômetro Albedo': data['Piranometro_Alab'],
                             'Umidade Relativa': data['Umidade_Relativa'],
-                            'Velocidade Vento': data['Velocidade_Vento']
+                            'Velocidade Vento': data['Velocidade_Vento'],
+                            'Status': '✅ Dados' if any(v != 0 for v in data.values()) else '🔢 Zerado'
                         })
                     
                     df_hourly = pd.DataFrame(hourly_table)
                     
                     # Mostrar tabela
+                    st.markdown("**📋 Tabela Completa (24 Horas)**")
                     st.dataframe(df_hourly, use_container_width=True)
                     
                     # Gráfico horário
-                    st.markdown("**📊 Variação Horária**")
+                    st.markdown("**📊 Variação Horária (24h)**")
                     
                     # Preparar dados para gráfico
                     df_hourly['Hora_num'] = df_hourly['Hora'].str[:2].astype(int)
@@ -792,6 +880,12 @@ class CompleteWeatherProcessor:
                         st.markdown("*Radiação Solar*")
                         radiation = df_hourly.set_index('Hora')[['Piranômetro 1', 'Piranômetro 2', 'Piranômetro Albedo']]
                         st.line_chart(radiation)
+                        
+                    # Informação adicional
+                    if horas_zeradas > 0:
+                        st.warning(f"⚠️ {horas_zeradas} horas foram preenchidas com zeros por falta de dados nos arquivos .dat")
+                    else:
+                        st.success("✅ Todas as 24 horas possuem dados reais dos arquivos .dat")
                 else:
                     st.info("Selecione um mês e dia para visualizar os dados horários.")
             else:
@@ -799,12 +893,13 @@ class CompleteWeatherProcessor:
         except Exception as e:
             st.error(f"Erro ao mostrar dados horários: {str(e)}")
 
+
 def main():
     # Cabeçalho principal
     st.markdown("""
     <div class="main-header">
         <h1>🌤️ Medições Usina Geradora Floriano</h1>
-        <p>Processador Completo de Dados Meteorológicos - Análises Mensais e Diárias</p>
+        <p>Processador Completo - Análises Mensais e Diárias com 24h Garantidas</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -826,11 +921,20 @@ def main():
         """)
         
         st.markdown("---")
-        st.markdown("### ℹ️ Sobre")
+        st.markdown("### ℹ️ Sobre as Melhorias")
         st.markdown("""
-        Este aplicativo processa dados meteorológicos e atualiza automaticamente:
+        **🔥 NOVA FUNCIONALIDADE:**
+        - ✅ **24h Garantidas**: Todas as horas (00:00-23:00) sempre preenchidas
+        - ✅ **Média Horária**: Registros 10:00-10:50 = hora 10:00
+        - ✅ **Zero Automático**: Horas sem dados = 0
+        - ✅ **Timestamp Preciso**: Baseado na data real dos .dat
+        """)
+        
+        st.markdown("---")
+        st.markdown("### 📊 Análises")
+        st.markdown("""
         - **Análises Mensais**: Estatísticas diárias
-        - **Análises Diárias**: Dados horários
+        - **Análises Diárias**: Dados horários (24h completas)
         """)
 
     # Layout principal
@@ -850,7 +954,7 @@ def main():
             "Selecione os arquivos .dat",
             type=['dat'],
             accept_multiple_files=True,
-            help="Arquivos de dados meteorológicos (.dat)"
+            help="Arquivos de dados meteorológicos (.dat) - Receção diária às 10h"
         )
 
     # Botão de processamento
@@ -859,20 +963,20 @@ def main():
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("🚀 Processar Dados", use_container_width=True):
-                with st.spinner("Processando dados..."):
+            if st.button("🚀 Processar Dados (24h Garantidas)", use_container_width=True):
+                with st.spinner("Processando dados com garantia de 24h completas..."):
                     # Processar arquivos .dat
                     success = st.session_state.processor.process_dat_files(dat_files)
                     
                     if success:
-                        st.success("✅ Arquivos .dat processados com sucesso!")
+                        st.success("✅ Arquivos .dat processados com 24h garantidas!")
                         
                         # Mostrar resumo
                         summary_data, total_days = st.session_state.processor.show_summary()
                         if summary_data:
                             st.markdown("### 📊 Resumo dos Dados Processados")
                             
-                            col1, col2 = st.columns(2)
+                            col1, col2, col3 = st.columns(3)
                             with col1:
                                 st.markdown(f"""
                                 <div class="metric-card">
@@ -888,6 +992,14 @@ def main():
                                     <h2>{total_days}</h2>
                                 </div>
                                 """, unsafe_allow_html=True)
+                                
+                            with col3:
+                                st.markdown(f"""
+                                <div class="metric-card">
+                                    <h4>⏰ Horas Garantidas</h4>
+                                    <h2>{total_days * 24}h</h2>
+                                </div>
+                                """, unsafe_allow_html=True)
                             
                             # Tabela de resumo
                             df_summary = pd.DataFrame(summary_data)
@@ -901,7 +1013,7 @@ def main():
                                 st.info("Os dados foram processados com sucesso, mas houve um problema na visualização da preview.")
                         
                         # Atualizar Excel
-                        st.markdown("### 🔄 Atualizando Excel...")
+                        st.markdown("### 🔄 Atualizando Excel com 24h completas...")
                         excel_file.seek(0)  # Reset file pointer
                         success, message = st.session_state.processor.update_excel_file(excel_file)
                         
@@ -913,9 +1025,9 @@ def main():
                             if updated_excel:
                                 st.markdown("### 📥 Download do Arquivo Atualizado")
                                 st.download_button(
-                                    label="📥 Baixar Excel Atualizado",
+                                    label="📥 Baixar Excel Atualizado (24h Garantidas)",
                                     data=updated_excel,
-                                    file_name=f"analise_anual_atualizada_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    file_name=f"analise_anual_24h_completas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                     use_container_width=True
                                 )
@@ -942,9 +1054,9 @@ def main():
     st.markdown("""
     <div style="text-align: center; color: #666; padding: 1rem;">
         <p>🌤️ Processador de Dados Meteorológicos | Usina Geradora Floriano</p>
+        <p><strong>✨ NOVO:</strong> Sistema com 24h Garantidas - Registros das 00:00 às 23:00 sempre completos!</p>
     </div>
     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
-
