@@ -1,4 +1,4 @@
-import streamlit stMore actions
+import streamlit as st
 import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
