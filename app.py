@@ -1,4 +1,61 @@
-import streamlit as st
+def _show_processing_details(self):
+        """Mostra detalhes específicos de quais dias foram processados e onde"""
+        if not self.dados_processados:
+            return
+            
+        st.markdown("---")
+        st.markdown("### 📅 Detalhes dos Dados Processados por Dia")
+        
+        for dataset_key, data in self.dados_processados.items():
+            ano, mes = dataset_key.split('-')
+            st.markdown(f"#### Mês {mes}/{ano}")
+            
+            if 'daily_data' in data and data['daily_data']:
+                dias_processados = sorted(data['daily_data'].keys())
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**🗓️ Dias com Dados Diários:**")
+                    for dia in dias_processados:
+                        # Contar quantas horas têm dados
+                        horas_com_dados = len(data['daily_data'][dia])
+                        st.markdown(f"• Dia {dia:02d}: {horas_com_dados} horas processadas")
+                
+                with col2:
+                    st.markdown("**📊 Dados Mensais:**")
+                    if 'monthly_data' in data and data['monthly_data']:
+                        dias_mensais = sorted(data['monthly_data'].keys())
+                        st.markdown(f"• Total de dias: {len(dias_mensais)}")
+                        st.markdown(f"• Dias: {', '.join([str(d) for d in dias_mensais])}")
+                    else:
+                        st.markdown("• Nenhum dado mensal processado")
+            else:
+                st.warning("Nenhum dado diário processado para este mês")
+        
+        # Mostrar exemplo de mapeamento para o primeiro dia processado
+        if self.dados_processados:
+            primeiro_mes = list(self.dados_processados.keys())[0]
+            primeiro_dia = None
+            
+            if (self.dados_processados[primeiro_mes]['daily_data'] and 
+                len(self.dados_processados[primeiro_mes]['daily_data']) > 0):
+                primeiro_dia = list(self.dados_processados[primeiro_mes]['daily_data'].keys())[0]
+                
+                st.markdown("---")
+                st.markdown("### 🎯 Exemplo de Mapeamento de Horários")
+                ano, mes = primeiro_mes.split('-')
+                st.info(f"📋 Exemplo para o dia {primeiro_dia:02d}/{mes}/{ano}:")
+                
+                # Mostrar algumas horas como exemplo
+                horas_exemplo = list(self.dados_processados[primeiro_mes]['daily_data'][primeiro_dia].keys())[:6]
+                exemplo_texto = []
+                for hora in horas_exemplo:
+                    linha_excel = int(hora[:2]) + 3  # 00:00 = linha 3
+                    coluna_excel = chr(66 + primeiro_dia - 1)  # B = dia 1, C = dia 2, etc.
+                    exemplo_texto.append(f"• {hora} → Linha {linha_excel}, Coluna {coluna_excel}")
+                
+                st.markdown("\n".join(exemplo_texto))import streamlit as st
 import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
@@ -169,6 +226,9 @@ class CompleteWeatherProcessor:
                 end_date = data.index.max()
                 days_span = (end_date - start_date).days + 1
 
+                # Debug: Mostrar informações detalhadas do arquivo
+                st.info(f"📄 **{uploaded_file.name}**: {start_date.strftime('%d/%m/%Y %H:%M')} até {end_date.strftime('%d/%m/%Y %H:%M')}")
+
                 # Processar para análises mensais E diárias
                 processed_days = self._process_monthly_and_daily_data(data)
 
@@ -205,6 +265,9 @@ class CompleteWeatherProcessor:
             progress_bar.progress((i + 1) / total_files)
 
         status_text.text("Processamento concluído!")
+
+        # Mostrar informações detalhadas dos dados processados
+        self._show_processing_details()
 
         # Mostrar resumo detalhado dos arquivos processados
         self._show_file_processing_summary()
@@ -279,7 +342,11 @@ class CompleteWeatherProcessor:
         data['date'] = data.index.date
         days_processed = 0
 
-        for date in data['date'].unique():
+        # Debug: Mostrar quais datas estão sendo processadas
+        unique_dates = sorted(data['date'].unique())
+        st.info(f"🔍 **Datas encontradas no arquivo**: {', '.join([d.strftime('%d/%m/%Y') for d in unique_dates])}")
+
+        for date in unique_dates:
             day_data = data[data['date'] == date]
             
             # Obter informações da data específica
@@ -288,6 +355,9 @@ class CompleteWeatherProcessor:
             dia_numero = date.day
             
             dataset_key = f"{ano}-{mes_numero:02d}"
+            
+            # Debug: Mostrar quantos registros por dia
+            st.info(f"📊 **Dia {dia_numero:02d}/{mes_numero:02d}/{ano}**: {len(day_data)} registros processados")
 
             if dataset_key not in self.dados_processados:
                 self.dados_processados[dataset_key] = {
@@ -302,6 +372,11 @@ class CompleteWeatherProcessor:
             # Dados horários para análise diária - criar nova estrutura para cada dia
             hourly_data = self._process_hourly_data_for_day(day_data)
             self.dados_processados[dataset_key]['daily_data'][dia_numero] = hourly_data
+            
+            # Debug: Mostrar quantas horas foram processadas para este dia
+            horas_processadas = len(hourly_data)
+            horas_lista = list(hourly_data.keys())
+            st.success(f"✅ **Dia {dia_numero}**: {horas_processadas} horas → {horas_lista[:3]}...{horas_lista[-3:] if len(horas_lista) > 6 else ''}")
 
             days_processed += 1
 
