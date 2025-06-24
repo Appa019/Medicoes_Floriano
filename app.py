@@ -127,28 +127,21 @@ class CompleteWeatherProcessor:
             'Velocidade_Vento': {'start_num': 157}
         }
 
+### INÍCIO DO NOVO process_dat_files
     def process_dat_files(self, dat_files):
-        """
-        Processa múltiplos arquivos .dat para ambas as análises
-        """
+        """Processa múltiplos arquivos .dat consolidando por TIMESTAMP"""
         progress_bar = st.progress(0)
         status_text = st.empty()
-
+    
         total_files = len(dat_files)
-        self.file_processing_info = []  # Lista para armazenar info de cada arquivo
-
+        self.file_processing_info = []
+        df_completo = pd.DataFrame()
+    
         for i, uploaded_file in enumerate(dat_files):
-            status_text.text(f"Processando arquivo {i+1}/{total_files}: {uploaded_file.name}")
-
+            status_text.text(f"🔄 Lendo {i+1}/{total_files}: {uploaded_file.name}")
             try:
-                # Ler arquivo .dat usando pandas diretamente (como no Colab)
-                uploaded_file.seek(0)  # Reset file pointer
+                uploaded_file.seek(0)
                 data = pd.read_csv(uploaded_file, skiprows=4, parse_dates=[0])
-
-                # Contar registros
-                total_records = len(data)
-
-                # Renomear colunas (igual ao código original do Colab)
                 data.columns = [
                     'TIMESTAMP', 'RECORD',
                     'Ane_Min', 'Ane_Max', 'Ane_Avg', 'Ane_Std',
@@ -161,35 +154,21 @@ class CompleteWeatherProcessor:
                     'LoggTemp_Min', 'LoggTemp_Max', 'LoggTemp_Avg', 'LoggTemp_Std',
                     'LitBatt_Min', 'LitBatt_Max', 'LitBatt_Avg', 'LitBatt_Std'
                 ]
-
                 data.set_index('TIMESTAMP', inplace=True)
-
-                # Obter informações do período
-                start_date = data.index.min()
-                end_date = data.index.max()
-                days_span = (end_date - start_date).days + 1
-
-                # Processar para análises mensais E diárias
-                processed_days = self._process_monthly_and_daily_data(data)
-
-                # Armazenar informações do arquivo
-                file_info = {
+                df_completo = pd.concat([df_completo, data])
+    
+                self.file_processing_info.append({
                     'arquivo': uploaded_file.name,
-                    'registros': total_records,
-                    'periodo_inicio': start_date.strftime('%Y-%m-%d %H:%M'),
-                    'periodo_fim': end_date.strftime('%Y-%m-%d %H:%M'),
-                    'dias_span': days_span,
-                    'dias_processados': processed_days,
-                    'status': '✅ Processado'
-                }
-                self.file_processing_info.append(file_info)
-
-                # Mostrar progresso detalhado
-                st.success(f"✅ {uploaded_file.name}: {total_records} registros, {processed_days} dias processados")
-
+                    'registros': len(data),
+                    'periodo_inicio': data.index.min().strftime('%Y-%m-%d %H:%M'),
+                    'periodo_fim': data.index.max().strftime('%Y-%m-%d %H:%M'),
+                    'dias_span': (data.index.max() - data.index.min()).days + 1,
+                    'dias_processados': 0,
+                    'status': '✅ Lido'
+                })
+    
             except Exception as e:
-                # Armazenar informações de erro
-                error_info = {
+                self.file_processing_info.append({
                     'arquivo': uploaded_file.name,
                     'registros': 0,
                     'periodo_inicio': 'N/A',
@@ -197,22 +176,25 @@ class CompleteWeatherProcessor:
                     'dias_span': 0,
                     'dias_processados': 0,
                     'status': f'❌ Erro: {str(e)}'
-                }
-                self.file_processing_info.append(error_info)
-                st.error(f"❌ Erro ao processar {uploaded_file.name}: {str(e)}")
-                continue
-
+                })
             progress_bar.progress((i + 1) / total_files)
-
-        status_text.text("Processamento concluído!")
-
-        # Mostrar resumo detalhado dos arquivos processados
+    
+        status_text.text("🔍 Unificando dados...")
+        df_completo = df_completo[~df_completo.index.duplicated(keep='first')]
+        df_completo.sort_index(inplace=True)
+    
+        # Processar tudo junto agora
+        dias_processados = self._process_monthly_and_daily_data(df_completo)
+    
+        # Atualizar info de dias processados
+        for info in self.file_processing_info:
+            if "✅" in info['status']:
+                info['dias_processados'] = dias_processados
+    
         self._show_file_processing_summary()
+        return not df_completo.empty
+    ### FIM DO NOVO process_dat_files
 
-        if self.dados_processados:
-            return True
-        else:
-            return False
 
     def _show_file_processing_summary(self):
         """Mostra resumo detalhado do processamento de cada arquivo"""
@@ -270,42 +252,52 @@ class CompleteWeatherProcessor:
 
             st.dataframe(df_display, use_container_width=True)
 
-    def _process_monthly_and_daily_data(self, data):
-        """
-        Processa dados para análises mensais E diárias simultaneamente
-        Retorna o número de dias processados
-        """
-        mes_numero = data.index[0].month
-        ano = data.index[0].year
-        dataset_key = f"{ano}-{mes_numero:02d}"
+### INÍCIO DO NOVO _process_monthly_and_daily_data
+def _process_monthly_and_daily_data(self, data):
+    """Processa DataFrame consolidado com múltiplos dias, sem sobrescrever horas existentes"""
+    mes_numero = data.index[0].month
+    ano = data.index[0].year
+    dataset_key = f"{ano}-{mes_numero:02d}"
 
-        if dataset_key not in self.dados_processados:
-            self.dados_processados[dataset_key] = {
-                'monthly_data': {},  # Para análise mensal
-                'daily_data': {}     # Para análise diária
-            }
+    if dataset_key not in self.dados_processados:
+        self.dados_processados[dataset_key] = {
+            'monthly_data': {},
+            'daily_data': {}
+        }
 
-        # Processar dados diários (análise mensal)
-        data['date'] = data.index.date
-        days_processed = 0
+    # Reamostrar para média horária apenas em horários válidos
+    data_hourly = data.resample("H").mean().dropna(how="all")
 
-        for date in data['date'].unique():
-            day_data = data[data['date'] == date]
-            dia_numero = date.day
+    dias_processados = 0
+    for dia, grupo in data_hourly.groupby(data_hourly.index.date):
+        dia_numero = dia.day
+        dia_str = dia.strftime('%Y-%m-%d')
+        grupo_dia = grupo.copy()
 
-            # Estatísticas diárias para análise mensal
-            stats = self._calculate_daily_statistics(day_data)
-            self.dados_processados[dataset_key]['monthly_data'][dia_numero] = stats
+        # Estatísticas diárias para mensal
+        stats = self._calculate_daily_statistics(data[data.index.date == dia])
+        self.dados_processados[dataset_key]['monthly_data'][dia_numero] = stats
 
-            # Dados horários para análise diária
-            hourly_data = self._process_hourly_data_for_day(day_data)
-            if dia_numero not in self.dados_processados[dataset_key]['daily_data']:
-                self.dados_processados[dataset_key]['daily_data'][dia_numero] = {}
-            self.dados_processados[dataset_key]['daily_data'][dia_numero].update(hourly_data)
+        # Dados horários para análise diária
+        if dia_numero not in self.dados_processados[dataset_key]['daily_data']:
+            self.dados_processados[dataset_key]['daily_data'][dia_numero] = {}
 
-            days_processed += 1
+        for timestamp, row in grupo_dia.iterrows():
+            hora_str = timestamp.strftime('%H:00')
+            if hora_str not in self.dados_processados[dataset_key]['daily_data'][dia_numero]:
+                self.dados_processados[dataset_key]['daily_data'][dia_numero][hora_str] = {
+                    'Temperatura': round(row['Temp_Avg'], 2),
+                    'Piranometro_1': round(row['Pir1_Avg'] / 1000, 3),
+                    'Piranometro_2': round(row['Pir2_Avg'] / 1000, 3),
+                    'Piranometro_Alab': round(row['PirALB_Avg'] / 1000, 3),
+                    'Umidade_Relativa': round(row['RH_Avg'], 2),
+                    'Velocidade_Vento': round(row['Ane_Avg'], 2)
+                }
 
-        return days_processed
+        dias_processados += 1
+
+    return dias_processados
+### FIM DO NOVO _process_monthly_and_daily_data
 
     def _process_hourly_data_for_day(self, day_data):
         """Processa dados horários para um dia específico"""
