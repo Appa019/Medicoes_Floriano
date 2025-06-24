@@ -275,33 +275,33 @@ class CompleteWeatherProcessor:
         Processa dados para análises mensais E diárias simultaneamente
         Retorna o número de dias processados
         """
-        mes_numero = data.index[0].month
-        ano = data.index[0].year
-        dataset_key = f"{ano}-{mes_numero:02d}"
-
-        if dataset_key not in self.dados_processados:
-            self.dados_processados[dataset_key] = {
-                'monthly_data': {},  # Para análise mensal
-                'daily_data': {}     # Para análise diária
-            }
-
-        # Processar dados diários (análise mensal)
+        # Processar dados por data específica
         data['date'] = data.index.date
         days_processed = 0
 
         for date in data['date'].unique():
             day_data = data[data['date'] == date]
+            
+            # Obter informações da data específica
+            mes_numero = date.month
+            ano = date.year
             dia_numero = date.day
+            
+            dataset_key = f"{ano}-{mes_numero:02d}"
+
+            if dataset_key not in self.dados_processados:
+                self.dados_processados[dataset_key] = {
+                    'monthly_data': {},  # Para análise mensal
+                    'daily_data': {}     # Para análise diária
+                }
 
             # Estatísticas diárias para análise mensal
             stats = self._calculate_daily_statistics(day_data)
             self.dados_processados[dataset_key]['monthly_data'][dia_numero] = stats
 
-            # Dados horários para análise diária
+            # Dados horários para análise diária - criar nova estrutura para cada dia
             hourly_data = self._process_hourly_data_for_day(day_data)
-            if dia_numero not in self.dados_processados[dataset_key]['daily_data']:
-                self.dados_processados[dataset_key]['daily_data'][dia_numero] = {}
-            self.dados_processados[dataset_key]['daily_data'][dia_numero].update(hourly_data)
+            self.dados_processados[dataset_key]['daily_data'][dia_numero] = hourly_data
 
             days_processed += 1
 
@@ -309,9 +309,11 @@ class CompleteWeatherProcessor:
 
     def _process_hourly_data_for_day(self, day_data):
         """Processa dados horários para um dia específico"""
+        day_data = day_data.copy()
         day_data['hour'] = day_data.index.hour
         hourly_averages = {}
 
+        # Processar apenas as 24 horas do dia (00:00 a 23:50)
         for hour in range(24):
             hour_data = day_data[day_data['hour'] == hour]
 
@@ -324,11 +326,7 @@ class CompleteWeatherProcessor:
                     'Umidade_Relativa': round(hour_data['RH_Avg'].mean(), 2),
                     'Velocidade_Vento': round(hour_data['Ane_Avg'].mean(), 2)
                 }
-            else:
-                hourly_averages[f"{hour:02d}:00"] = {
-                    'Temperatura': 0, 'Piranometro_1': 0, 'Piranometro_2': 0,
-                    'Piranometro_Alab': 0, 'Umidade_Relativa': 0, 'Velocidade_Vento': 0
-                }
+            # Se não há dados para esta hora, não criar entrada (deixar vazia)
 
         return hourly_averages
 
@@ -524,24 +522,33 @@ class CompleteWeatherProcessor:
         return dias_atualizados
 
     def _update_daily_data(self, ws, daily_data):
-        """Atualiza dados da análise diária"""
+        """Atualiza dados da análise diária com mapeamento correto por dia"""
         dias_atualizados = 0
 
         for dia_numero, day_hourly_data in daily_data.items():
+            # Verificar se day_hourly_data contém os dados horários diretamente
+            if not isinstance(day_hourly_data, dict):
+                continue
+                
             for hour_str, hour_data in day_hourly_data.items():
-                hour_num = int(hour_str[:2])
-                row_num = hour_num + 3  # 00:00 = linha 3
+                try:
+                    hour_num = int(hour_str[:2])
+                    row_num = hour_num + 3  # 00:00 = linha 3, 01:00 = linha 4, etc.
 
-                if row_num < 3:
+                    if row_num < 3 or row_num > 26:  # Validar limites (00:00 a 23:00)
+                        continue
+
+                    for variable, value in hour_data.items():
+                        col_letter = self._get_column_for_variable_and_day(variable, dia_numero)
+                        if col_letter and value is not None:
+                            try:
+                                ws[f'{col_letter}{row_num}'] = value
+                            except Exception:
+                                # Log do erro silencioso - continuar processamento
+                                pass
+                except (ValueError, KeyError):
+                    # Pular horas com formato inválido
                     continue
-
-                for variable, value in hour_data.items():
-                    col_letter = self._get_column_for_variable_and_day(variable, dia_numero)
-                    if col_letter and row_num != 2:
-                        try:
-                            ws[f'{col_letter}{row_num}'] = value
-                        except:
-                            pass
 
             dias_atualizados += 1
 
@@ -751,53 +758,68 @@ class CompleteWeatherProcessor:
                 with col2:
                     if selected_month in self.dados_processados:
                         available_days = list(self.dados_processados[selected_month]['daily_data'].keys())
-                        selected_day = st.selectbox("Dia:", sorted(available_days), key="hourly_day")
+                        if available_days:
+                            selected_day = st.selectbox("Dia:", sorted(available_days), key="hourly_day")
+                        else:
+                            st.info("Nenhum dia disponível para este mês.")
+                            return
 
-                if selected_month in self.dados_processados and selected_day in self.dados_processados[selected_month]['daily_data']:
+                if (selected_month in self.dados_processados and 
+                    available_days and 
+                    selected_day in self.dados_processados[selected_month]['daily_data']):
+                    
                     day_data = self.dados_processados[selected_month]['daily_data'][selected_day]
+                    
+                    # Mostrar informações do dia selecionado
+                    ano, mes = selected_month.split('-')
+                    st.info(f"📅 Dados do dia {selected_day:02d}/{mes}/{ano}")
                     
                     # Preparar dados horários
                     hourly_table = []
                     for hour, data in day_data.items():
                         hourly_table.append({
                             'Hora': hour,
-                            'Temperatura': data['Temperatura'],
-                            'Piranômetro 1': data['Piranometro_1'],
-                            'Piranômetro 2': data['Piranometro_2'],
-                            'Piranômetro Albedo': data['Piranometro_Alab'],
-                            'Umidade Relativa': data['Umidade_Relativa'],
-                            'Velocidade Vento': data['Velocidade_Vento']
+                            'Temperatura (°C)': data['Temperatura'],
+                            'Piranômetro 1 (kW/m²)': data['Piranometro_1'],
+                            'Piranômetro 2 (kW/m²)': data['Piranometro_2'],
+                            'Piranômetro Albedo (kW/m²)': data['Piranometro_Alab'],
+                            'Umidade Relativa (%)': data['Umidade_Relativa'],
+                            'Velocidade Vento (m/s)': data['Velocidade_Vento']
                         })
                     
-                    df_hourly = pd.DataFrame(hourly_table)
-                    
-                    # Mostrar tabela
-                    st.dataframe(df_hourly, use_container_width=True)
-                    
-                    # Gráfico horário
-                    st.markdown("**📊 Variação Horária**")
-                    
-                    # Preparar dados para gráfico
-                    df_hourly['Hora_num'] = df_hourly['Hora'].str[:2].astype(int)
-                    df_hourly = df_hourly.sort_values('Hora_num')
-                    
-                    chart_cols = st.columns(2)
-                    
-                    with chart_cols[0]:
-                        st.markdown("*Temperatura e Umidade*")
-                        temp_humidity = df_hourly.set_index('Hora')[['Temperatura', 'Umidade Relativa']]
-                        st.line_chart(temp_humidity)
-                    
-                    with chart_cols[1]:
-                        st.markdown("*Radiação Solar*")
-                        radiation = df_hourly.set_index('Hora')[['Piranômetro 1', 'Piranômetro 2', 'Piranômetro Albedo']]
-                        st.line_chart(radiation)
+                    if hourly_table:
+                        df_hourly = pd.DataFrame(hourly_table)
+                        
+                        # Ordenar por hora
+                        df_hourly['Hora_num'] = df_hourly['Hora'].str[:2].astype(int)
+                        df_hourly = df_hourly.sort_values('Hora_num').drop('Hora_num', axis=1)
+                        
+                        # Mostrar tabela
+                        st.dataframe(df_hourly, use_container_width=True)
+                        
+                        # Gráficos horários
+                        st.markdown("**📊 Variação Horária**")
+                        
+                        chart_cols = st.columns(2)
+                        
+                        with chart_cols[0]:
+                            st.markdown("*Temperatura e Umidade*")
+                            temp_humidity = df_hourly.set_index('Hora')[['Temperatura (°C)', 'Umidade Relativa (%)']]
+                            st.line_chart(temp_humidity)
+                        
+                        with chart_cols[1]:
+                            st.markdown("*Radiação Solar*")
+                            radiation = df_hourly.set_index('Hora')[['Piranômetro 1 (kW/m²)', 'Piranômetro 2 (kW/m²)', 'Piranômetro Albedo (kW/m²)']]
+                            st.line_chart(radiation)
+                    else:
+                        st.warning("Nenhum dado horário encontrado para este dia.")
                 else:
                     st.info("Selecione um mês e dia para visualizar os dados horários.")
             else:
                 st.info("Nenhum dado horário disponível.")
         except Exception as e:
             st.error(f"Erro ao mostrar dados horários: {str(e)}")
+            st.info("Verifique se os dados foram processados corretamente.")
 
 def main():
     # Cabeçalho principal
