@@ -513,6 +513,287 @@ class CompleteWeatherProcessor:
 
         return summary_data, total_days, total_hours
 
+    def show_data_preview(self):
+        """Preview focada em dados reais"""
+        if not self.dados_processados:
+            return
+        
+        st.markdown("---")
+        st.markdown("### 🔍 Preview dos Dados Processados (Preenchimento Completo 24h)")
+        st.info("🎯 **Preenchimento Completo**: Todas as horas 00:00-23:00 preenchidas")
+        
+        # Tabs para diferentes visualizações
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 Estatísticas Gerais", "📈 Gráficos", "📋 Dados Mensais", "⏰ Dados Horários"])
+        
+        with tab1:
+            self._show_general_statistics()
+        
+        with tab2:
+            self._show_charts()
+        
+        with tab3:
+            self._show_monthly_data_preview()
+        
+        with tab4:
+            self._show_hourly_data_preview()
+
+    def _show_general_statistics(self):
+        """Mostra estatísticas gerais dos dados"""
+        st.markdown("#### 📊 Estatísticas por Variável")
+        
+        total_records = 0
+        total_days = 0
+        total_hours = 0
+        
+        for dataset_key, month_data in self.dados_processados.items():
+            total_days += len(month_data)
+            for dia_numero, day_data in month_data.items():
+                total_hours += len(day_data)
+                for hour_str, hour_data in day_data.items():
+                    total_records += len(hour_data)  # 6 variáveis por hora
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <h4>📅 Total de Dias</h4>
+                <h2>{total_days}</h2>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="metric-card">
+                <h4>⏰ Horas Processadas</h4>
+                <h2>{total_hours}</h2>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            cobertura = (total_hours / (total_days * 24) * 100) if total_days > 0 else 0
+            st.markdown(f"""
+            <div class="metric-card">
+                <h4>📈 Cobertura</h4>
+                <h2>{cobertura:.1f}%</h2>
+            </div>
+            """, unsafe_allow_html=True)
+
+    def _show_charts(self):
+        """Mostra gráficos dos dados"""
+        try:
+            st.markdown("#### 📈 Visualizações")
+            
+            # Preparar dados para gráficos (média diária)
+            chart_data = []
+            
+            for dataset_key, month_data in self.dados_processados.items():
+                ano, mes = dataset_key.split('-')
+                for dia_numero, day_data in month_data.items():
+                    # Calcular médias diárias
+                    temp_values = []
+                    pir1_values = []
+                    pir2_values = []
+                    humidity_values = []
+                    wind_values = []
+                    
+                    for hour_str, hour_data in day_data.items():
+                        temp_values.append(hour_data['Temperatura'])
+                        pir1_values.append(hour_data['Piranometro_1'])
+                        pir2_values.append(hour_data['Piranometro_2'])
+                        humidity_values.append(hour_data['Umidade_Relativa'])
+                        wind_values.append(hour_data['Velocidade_Vento'])
+                    
+                    if temp_values:  # Se há dados
+                        chart_data.append({
+                            'Data': f"{ano}-{mes}-{dia_numero:02d}",
+                            'Temperatura Média': round(sum(temp_values) / len(temp_values), 2),
+                            'Radiação Solar 1': round(sum(pir1_values) / len(pir1_values), 3),
+                            'Radiação Solar 2': round(sum(pir2_values) / len(pir2_values), 3),
+                            'Umidade Relativa': round(sum(humidity_values) / len(humidity_values), 2),
+                            'Velocidade Vento': round(sum(wind_values) / len(wind_values), 2)
+                        })
+            
+            if chart_data:
+                df_chart = pd.DataFrame(chart_data)
+                df_chart['Data'] = pd.to_datetime(df_chart['Data'])
+                df_chart = df_chart.sort_values('Data')
+                
+                # Gráfico de temperatura
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**🌡️ Temperatura Média Diária**")
+                    st.line_chart(df_chart.set_index('Data')['Temperatura Média'])
+                
+                with col2:
+                    st.markdown("**☀️ Radiação Solar Média**")
+                    radiation_data = df_chart.set_index('Data')[['Radiação Solar 1', 'Radiação Solar 2']]
+                    st.line_chart(radiation_data)
+                
+                # Gráfico de umidade e vento
+                col3, col4 = st.columns(2)
+                
+                with col3:
+                    st.markdown("**💧 Umidade Relativa**")
+                    st.line_chart(df_chart.set_index('Data')['Umidade Relativa'])
+                
+                with col4:
+                    st.markdown("**💨 Velocidade do Vento**")
+                    st.line_chart(df_chart.set_index('Data')['Velocidade Vento'])
+            else:
+                st.info("Nenhum dado disponível para gráficos.")
+        except Exception as e:
+            st.error(f"Erro ao gerar gráficos: {str(e)}")
+
+    def _show_monthly_data_preview(self):
+        """Mostra preview dos dados mensais"""
+        try:
+            st.markdown("#### 📋 Resumo Mensal")
+            
+            # Seletor de mês
+            available_months = list(self.dados_processados.keys())
+            if available_months:
+                selected_month = st.selectbox("Selecione o mês para visualizar:", available_months)
+                
+                if selected_month in self.dados_processados:
+                    month_data = self.dados_processados[selected_month]
+                    
+                    # Preparar dados para tabela
+                    table_data = []
+                    for dia, day_data in month_data.items():
+                        # Calcular estatísticas do dia
+                        if day_data:
+                            temp_values = [h['Temperatura'] for h in day_data.values()]
+                            pir1_values = [h['Piranometro_1'] for h in day_data.values()]
+                            humidity_values = [h['Umidade_Relativa'] for h in day_data.values()]
+                            wind_values = [h['Velocidade_Vento'] for h in day_data.values()]
+                            
+                            table_data.append({
+                                'Dia': dia,
+                                'Horas Processadas': len(day_data),
+                                'Temp Média': round(sum(temp_values) / len(temp_values), 2),
+                                'Temp Min': round(min(temp_values), 2),
+                                'Temp Max': round(max(temp_values), 2),
+                                'Rad Solar Média': round(sum(pir1_values) / len(pir1_values), 3),
+                                'Umidade Média': round(sum(humidity_values) / len(humidity_values), 2),
+                                'Vento Média': round(sum(wind_values) / len(wind_values), 2)
+                            })
+                    
+                    if table_data:
+                        df_monthly = pd.DataFrame(table_data)
+                        df_monthly = df_monthly.sort_values('Dia')
+                        st.dataframe(df_monthly, use_container_width=True)
+                    else:
+                        st.info("Nenhum dado disponível para este mês.")
+            else:
+                st.info("Nenhum dado mensal disponível.")
+        except Exception as e:
+            st.error(f"Erro ao mostrar dados mensais: {str(e)}")
+
+    def _show_hourly_data_preview(self):
+        """Preview dos dados horários"""
+        try:
+            st.markdown("#### ⏰ Dados Horários Detalhados")
+            
+            # Seletores
+            available_months = list(self.dados_processados.keys())
+            if available_months:
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    selected_month = st.selectbox("Mês:", available_months, key="hourly_month")
+                
+                with col2:
+                    if selected_month in self.dados_processados:
+                        available_days = list(self.dados_processados[selected_month].keys())
+                        selected_day = st.selectbox("Dia:", sorted(available_days), key="hourly_day")
+                
+                if selected_month in self.dados_processados and selected_day in self.dados_processados[selected_month]:
+                    day_data = self.dados_processados[selected_month][selected_day]
+                    
+                    # Mostrar estatísticas do dia
+                    total_horas = len(day_data)
+                    horas_disponiveis = sorted(day_data.keys())
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <h4>⏰ Horas Processadas</h4>
+                            <h2>{total_horas}/24</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with col2:
+                        if horas_disponiveis:
+                            primeiro = horas_disponiveis[0]
+                            ultimo = horas_disponiveis[-1]
+                            st.markdown(f"""
+                            <div class="metric-card">
+                                <h4>📅 Período</h4>
+                                <h2>{primeiro} - {ultimo}</h2>
+                            </div>
+                            """, unsafe_allow_html=True)
+                    
+                    with col3:
+                        cobertura = (total_horas / 24 * 100)
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <h4>📈 Cobertura</h4>
+                            <h2>{cobertura:.1f}%</h2>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Tabela de dados horários
+                    hourly_table = []
+                    for hour_str in sorted(day_data.keys()):
+                        data_values = day_data[hour_str]
+                        
+                        hourly_table.append({
+                            'Hora': hour_str,
+                            'Temperatura (°C)': data_values['Temperatura'],
+                            'Piranômetro 1 (kW)': data_values['Piranometro_1'],
+                            'Piranômetro 2 (kW)': data_values['Piranometro_2'],
+                            'Piranômetro Albedo (kW)': data_values['Piranometro_Alab'],
+                            'Umidade Relativa (%)': data_values['Umidade_Relativa'],
+                            'Velocidade Vento (m/s)': data_values['Velocidade_Vento']
+                        })
+                    
+                    df_hourly = pd.DataFrame(hourly_table)
+                    
+                    # Mostrar tabela
+                    st.markdown("**📋 Dados Horários**")
+                    st.dataframe(df_hourly, use_container_width=True)
+                    
+                    # Gráfico horário
+                    if len(df_hourly) > 1:
+                        st.markdown("**📊 Variação Horária**")
+                        
+                        # Preparar dados para gráfico
+                        df_hourly['Hora_num'] = df_hourly['Hora'].str[:2].astype(int)
+                        df_hourly = df_hourly.sort_values('Hora_num')
+                        
+                        chart_cols = st.columns(2)
+                        
+                        with chart_cols[0]:
+                            st.markdown("*Temperatura e Umidade*")
+                            temp_humidity = df_hourly.set_index('Hora')[['Temperatura (°C)', 'Umidade Relativa (%)']]
+                            st.line_chart(temp_humidity)
+                        
+                        with chart_cols[1]:
+                            st.markdown("*Radiação Solar*")
+                            radiation = df_hourly.set_index('Hora')[['Piranômetro 1 (kW)', 'Piranômetro 2 (kW)', 'Piranômetro Albedo (kW)']]
+                            st.line_chart(radiation)
+                
+                else:
+                    st.info("Selecione um mês e dia para visualizar os dados horários.")
+            else:
+                st.info("Nenhum dado horário disponível.")
+        except Exception as e:
+            st.error(f"Erro ao mostrar dados horários: {str(e)}")
+
 
 def main():
     # Cabeçalho principal
@@ -632,6 +913,13 @@ def main():
                             # Tabela de resumo
                             df_summary = pd.DataFrame(summary_data)
                             st.dataframe(df_summary, use_container_width=True)
+                            
+                            # Preview detalhada dos dados
+                            try:
+                                st.session_state.processor.show_data_preview()
+                            except Exception as e:
+                                st.error(f"Erro ao mostrar preview dos dados: {str(e)}")
+                                st.info("Os dados foram processados com sucesso, mas houve um problema na visualização da preview.")
                         
                         # Atualizar Excel
                         st.markdown("### 🔄 Atualizando Excel com Preenchimento Completo...")
