@@ -78,7 +78,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-class CompleteWeatherProcessor:
+class RealWeatherProcessor:
     """
     🔧 PROCESSADOR CORRIGIDO FINAL
     Preenche TODOS os horários 00:00-23:00 no Excel baseado nos arquivos .dat
@@ -806,7 +806,7 @@ def main():
 
     # Inicializar o processador
     if 'processor' not in st.session_state:
-        st.session_state.processor = CompleteWeatherProcessor()
+        st.session_state.processor = RealWeatherProcessor()
 
     # Sidebar com instruções
     with st.sidebar:
