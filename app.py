@@ -294,18 +294,28 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # Inicializar processador
-    if 'processor' not in st.session_state:
+    # Inicializar processador (forçar reset se necessário)
+    if 'processor' not in st.session_state or not hasattr(st.session_state.processor, 'show_summary'):
         st.session_state.processor = SimpleWeatherProcessor()
 
     # Instruções simples
-    st.markdown("### 📋 Como usar:")
-    st.markdown("""
-    1. Faça upload do arquivo Excel
-    2. Faça upload dos arquivos .dat
-    3. Clique em "Processar"
-    4. Baixe o arquivo atualizado
-    """)
+    col_info, col_reset = st.columns([3, 1])
+    
+    with col_info:
+        st.markdown("### 📋 Como usar:")
+        st.markdown("""
+        1. Faça upload do arquivo Excel
+        2. Faça upload dos arquivos .dat
+        3. Clique em "Processar"
+        4. Baixe o arquivo atualizado
+        """)
+    
+    with col_reset:
+        st.markdown("### 🔄 Reset")
+        if st.button("Limpar Cache", help="Use se houver erros"):
+            st.session_state.clear()
+            st.session_state.processor = SimpleWeatherProcessor()
+            st.success("Cache limpo!")
 
     # Upload de arquivos
     col1, col2 = st.columns(2)
@@ -330,13 +340,24 @@ def main():
         st.markdown("---")
         
         if st.button("🚀 Processar Dados", use_container_width=True, type="primary"):
+            # Verificação de segurança
+            if not hasattr(st.session_state.processor, 'show_summary'):
+                st.session_state.processor = SimpleWeatherProcessor()
+                st.warning("Processador reinicializado para evitar erros.")
+            
             with st.spinner("Processando..."):
                 # Processar .dat
                 success = st.session_state.processor.process_dat_files(dat_files)
                 
                 if success:
-                    # Mostrar resumo
-                    summary_data, total_days, total_hours = st.session_state.processor.show_summary()
+                    # Mostrar resumo com verificação de segurança
+                    try:
+                        summary_data, total_days, total_hours = st.session_state.processor.show_summary()
+                    except AttributeError:
+                        # Se ainda houver erro, reinicializar e tentar novamente
+                        st.session_state.processor = SimpleWeatherProcessor()
+                        st.warning("Processador foi reinicializado. Tente processar novamente.")
+                        return
                     
                     if summary_data:
                         st.success("✅ Dados processados!")
