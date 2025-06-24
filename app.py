@@ -117,14 +117,15 @@ class CorrectWeatherProcessor:
             9: "09", 10: "10", 11: "11", 12: "12"
         }
 
-        # Mapeamento de colunas para análise diária
+        # Mapeamento correto de colunas para análise diária baseado na estrutura real
+        # Estrutura: Horario | Temperatura_Dia1-31 | Piranometro_1_Dia1-31 | Piranometro_2_Dia1-31 | Piranometro_Alab_Dia1-31 | Umidade_Relativa_Dia1-31 | Velocidade_Vento_Dia1-31
         self.column_mapping = {
-            'Temperatura': {'start_num': 2},
-            'Piranometro_1': {'start_num': 33},
-            'Piranometro_2': {'start_num': 64},
-            'Piranometro_Alab': {'start_num': 95},
-            'Umidade_Relativa': {'start_num': 126},
-            'Velocidade_Vento': {'start_num': 157}
+            'Temperatura': {'start_col': 'B'},           # Temperatura_Dia1 = coluna B
+            'Piranometro_1': {'start_col': 'AG'},        # Piranometro_1_Dia1 = coluna AG (coluna 33)
+            'Piranometro_2': {'start_col': 'BL'},        # Piranometro_2_Dia1 = coluna BL (coluna 64) 
+            'Piranometro_Alab': {'start_col': 'CQ'},     # Piranometro_Alab_Dia1 = coluna CQ (coluna 95)
+            'Umidade_Relativa': {'start_col': 'DV'},     # Umidade_Relativa_Dia1 = coluna DV (coluna 126)
+            'Velocidade_Vento': {'start_col': 'FA'}      # Velocidade_Vento_Dia1 = coluna FA (coluna 157)
         }
 
     def process_dat_files(self, dat_files):
@@ -539,39 +540,94 @@ class CorrectWeatherProcessor:
     def _update_daily_data_correct(self, ws, daily_data):
         """
         🔧 FUNÇÃO CORRIGIDA: Atualiza análise diária com mapeamento correto
-        Só preenche onde há dados reais - sem valores vazios
+        Estrutura real: Horario | Temperatura_Dia1-31 | Piranometro_1_Dia1-31 | etc.
         """
         dias_atualizados = 0
 
         for dia_numero, day_hourly_data in daily_data.items():
+            # Debug: mostrar qual dia está sendo processado
+            print(f"Processando dia {dia_numero} com {len(day_hourly_data)} horas de dados")
+            
             # 🔧 NOVA LÓGICA: Processar apenas as horas que realmente existem
             for hour_str, hour_data in day_hourly_data.items():
                 # Extrair número da hora (ex: "10:00" -> 10)
                 hour_num = int(hour_str.split(':')[0])
+                
+                # 🔧 CORREÇÃO CRÍTICA: Mapeamento correto das linhas
+                # Na estrutura real: linha 3 = 00:00, linha 4 = 01:00, etc.
                 row_num = hour_num + 3  # 00:00 = linha 3, 01:00 = linha 4, etc.
 
-                # 🔧 CORREÇÃO: Atualizar cada variável na planilha apenas se há dados
+                # Debug: mostrar mapeamento
+                print(f"  Hora {hour_str} -> Linha {row_num}")
+
+                # 🔧 CORREÇÃO: Atualizar cada variável na planilha 
                 for variable, value in hour_data.items():
-                    col_letter = self._get_column_for_variable_and_day(variable, dia_numero)
-                    if col_letter and value is not None and value != 0:
-                        try:
-                            ws[f'{col_letter}{row_num}'] = value
-                        except Exception as e:
-                            # Log do erro mas continua processamento
-                            print(f"Erro ao escrever {variable} no dia {dia_numero}, hora {hour_str}: {e}")
+                    # Mapear nomes das variáveis
+                    variable_excel_map = {
+                        'Temperatura': 'Temperatura',
+                        'Piranometro_1': 'Piranometro_1',
+                        'Piranometro_2': 'Piranometro_2', 
+                        'Piranometro_Alab': 'Piranometro_Alab',
+                        'Umidade_Relativa': 'Umidade_Relativa',
+                        'Velocidade_Vento': 'Velocidade_Vento'
+                    }
+                    
+                    if variable in variable_excel_map:
+                        excel_variable = variable_excel_map[variable]
+                        col_letter = self._get_column_for_variable_and_day(excel_variable, dia_numero)
+                        
+                        if col_letter and value is not None:
+                            try:
+                                # 🔧 CORREÇÃO: Escrever valor na célula correta
+                                cell_ref = f'{col_letter}{row_num}'
+                                ws[cell_ref] = value
+                                print(f"    {variable} = {value} -> {cell_ref}")
+                            except Exception as e:
+                                print(f"    Erro ao escrever {variable} no dia {dia_numero}, hora {hour_str}: {e}")
 
             dias_atualizados += 1
 
         return dias_atualizados
 
     def _get_column_for_variable_and_day(self, variable, dia_numero):
-        """Calcula letra da coluna para análise diária"""
+        """
+        🔧 FUNÇÃO CORRIGIDA: Calcula letra da coluna para análise diária
+        Baseado na estrutura real: Temperatura_Dia1, Piranometro_1_Dia1, etc.
+        """
         if variable not in self.column_mapping:
             return None
 
-        start_col_num = self.column_mapping[variable]['start_num']
+        # Mapear nome da variável para o nome correto na planilha
+        variable_map = {
+            'Temperatura': 'Temperatura',
+            'Piranometro_1': 'Piranometro_1', 
+            'Piranometro_2': 'Piranometro_2',
+            'Piranometro_Alab': 'Piranometro_Alab',
+            'Umidade_Relativa': 'Umidade_Relativa',
+            'Velocidade_Vento': 'Velocidade_Vento'
+        }
+        
+        if variable not in variable_map:
+            return None
+            
+        # Obter coluna inicial para a variável
+        start_col_letter = self.column_mapping[variable]['start_col']
+        
+        # Converter letra da coluna para número
+        start_col_num = self._column_letter_to_number(start_col_letter)
+        
+        # Calcular coluna de destino: coluna inicial + (dia - 1)
         target_col_num = start_col_num + (dia_numero - 1)
+        
+        # Converter de volta para letra
         return get_column_letter(target_col_num)
+    
+    def _column_letter_to_number(self, column_letter):
+        """Converte letra da coluna para número (A=1, B=2, etc.)"""
+        result = 0
+        for char in column_letter:
+            result = result * 26 + (ord(char) - ord('A') + 1)
+        return result
 
     def get_updated_excel_file(self):
         """Retorna o arquivo Excel atualizado"""
@@ -879,6 +935,16 @@ class CorrectWeatherProcessor:
                     # Mostrar detalhes do padrão detectado
                     if horas_disponiveis:
                         self._show_pattern_details(horas_disponiveis, selected_day)
+                    
+                    # 🔧 NOVA SEÇÃO: Debug do mapeamento de colunas
+                    st.markdown("#### 🔧 Debug do Mapeamento de Colunas")
+                    debug_mapping = {}
+                    for variable in ['Temperatura', 'Piranometro_1', 'Piranometro_2', 'Piranometro_Alab', 'Umidade_Relativa', 'Velocidade_Vento']:
+                        col_letter = self._get_column_for_variable_and_day(variable, selected_day)
+                        debug_mapping[variable] = f"Dia {selected_day} -> Coluna {col_letter}"
+                    
+                    debug_df = pd.DataFrame(list(debug_mapping.items()), columns=['Variável', 'Mapeamento'])
+                    st.dataframe(debug_df, use_container_width=True)
                         
                 else:
                     st.info("Selecione um mês e dia para visualizar os dados horários mapeados.")
