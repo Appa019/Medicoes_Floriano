@@ -4,7 +4,7 @@ import numpy as np
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 import warnings
 import io
 import tempfile
@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# CSS personalizado
+# CSS personalizado com as cores da CSN
 st.markdown("""
 <style>
     .main-header {
@@ -67,6 +67,26 @@ st.markdown("""
         margin: 1rem 0;
     }
     
+    .error-box {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        border-radius: 5px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+    
+    .info-box {
+        background-color: #d1ecf1;
+        border: 1px solid #bee5eb;
+        border-radius: 5px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+    
+    .sidebar .sidebar-content {
+        background-color: #f8f9fa;
+    }
+    
     .metric-card {
         background-color: white;
         padding: 1rem;
@@ -78,50 +98,57 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-class RealWeatherProcessor:
+class CompleteWeatherProcessor:
     """
-    🔧 PROCESSADOR CORRIGIDO FINAL
-    Preenche TODOS os horários 00:00-23:00 no Excel baseado nos arquivos .dat
+    Processador completo de dados meteorológicos
+    Realiza automaticamente análises mensais E diárias
     """
 
     def __init__(self):
         self.dados_processados = {}
         self.excel_path = None
+        self.abas_mensais_atualizadas = []
         self.abas_diarias_atualizadas = []
-        self.file_processing_info = []
 
-        # 🔧 MAPEAMENTO CORRETO DAS COLUNAS (baseado no header fornecido)
+        # Mapeamento de meses
+        self.meses = {
+            1: "01", 2: "02", 3: "03", 4: "04",
+            5: "05", 6: "06", 7: "07", 8: "08",
+            9: "09", 10: "10", 11: "11", 12: "12"
+        }
+
+        # Mapeamento de colunas para análise diária
         self.column_mapping = {
-            'Temperatura': {'start_col': 'B'},           # Temperatura_Dia20 = coluna B
-            'Piranometro_1': {'start_col': 'AG'},        # Piranometro_1_Dia1 = coluna AG (coluna 33)
-            'Piranometro_2': {'start_col': 'BL'},        # Piranometro_2_Dia1 = coluna BL (coluna 64) 
-            'Piranometro_Alab': {'start_col': 'CQ'},     # Piranometro_Alab_Dia1 = coluna CQ (coluna 95)
-            'Umidade_Relativa': {'start_col': 'DV'},     # Umidade_Relativa_Dia1 = coluna DV (coluna 126)
-            'Velocidade_Vento': {'start_col': 'FA'}      # Velocidade_Vento_Dia1 = coluna FA (coluna 157)
+            'Temperatura': {'start_num': 2},
+            'Piranometro_1': {'start_num': 33},
+            'Piranometro_2': {'start_num': 64},
+            'Piranometro_Alab': {'start_num': 95},
+            'Umidade_Relativa': {'start_num': 126},
+            'Velocidade_Vento': {'start_num': 157}
         }
 
     def process_dat_files(self, dat_files):
         """
-        🔧 PROCESSA ARQUIVOS .DAT COM PREENCHIMENTO COMPLETO 00:00-23:00
+        Processa múltiplos arquivos .dat para ambas as análises
         """
         progress_bar = st.progress(0)
         status_text = st.empty()
         
         total_files = len(dat_files)
-        self.file_processing_info = []
+        self.file_processing_info = []  # Lista para armazenar info de cada arquivo
         
         for i, uploaded_file in enumerate(dat_files):
             status_text.text(f"Processando arquivo {i+1}/{total_files}: {uploaded_file.name}")
             
             try:
-                # Ler arquivo .dat
-                uploaded_file.seek(0)
+                # Ler arquivo .dat usando pandas diretamente (como no Colab)
+                uploaded_file.seek(0)  # Reset file pointer
                 data = pd.read_csv(uploaded_file, skiprows=4, parse_dates=[0])
 
                 # Contar registros
                 total_records = len(data)
                 
-                # Renomear colunas
+                # Renomear colunas (igual ao código original do Colab)
                 data.columns = [
                     'TIMESTAMP', 'RECORD',
                     'Ane_Min', 'Ane_Max', 'Ane_Avg', 'Ane_Std',
@@ -142,8 +169,8 @@ class RealWeatherProcessor:
                 end_date = data.index.max()
                 days_span = (end_date - start_date).days + 1
                 
-                # 🔧 NOVO: Processar com preenchimento completo 24h
-                processed_days = self._process_complete_24h_data(data, uploaded_file.name)
+                # Processar para análises mensais E diárias
+                processed_days = self._process_monthly_and_daily_data(data)
                 
                 # Armazenar informações do arquivo
                 file_info = {
@@ -157,9 +184,11 @@ class RealWeatherProcessor:
                 }
                 self.file_processing_info.append(file_info)
                 
+                # Mostrar progresso detalhado
                 st.success(f"✅ {uploaded_file.name}: {total_records} registros, {processed_days} dias processados")
 
             except Exception as e:
+                # Armazenar informações de erro
                 error_info = {
                     'arquivo': uploaded_file.name,
                     'registros': 0,
@@ -177,264 +206,21 @@ class RealWeatherProcessor:
 
         status_text.text("Processamento concluído!")
         
-        # Mostrar resumo detalhado
+        # Mostrar resumo detalhado dos arquivos processados
         self._show_file_processing_summary()
         
-        return bool(self.dados_processados)
-
-    def _process_complete_24h_data(self, data, filename):
-        """
-        🔧 NOVA FUNÇÃO: Processa dados para preencher TODAS as 24 horas (00:00-23:00)
-        
-        Lógica corrigida:
-        - Um arquivo .dat contém dados de 10:10 do dia anterior até 10:00 do dia atual
-        - Para cada dia no intervalo, preenche TODAS as 24 horas usando os dados disponíveis
-        """
-        # Determinar datas dos dados
-        start_timestamp = data.index.min()
-        end_timestamp = data.index.max()
-        
-        # Determinar quais dias processar
-        start_date = start_timestamp.date()
-        end_date = end_timestamp.date()
-        
-        # Lista de todos os dias no intervalo
-        current_date = start_date
-        processed_days = 0
-        
-        while current_date <= end_date:
-            # 🔧 NOVO: Criar dados completos para 24h deste dia
-            complete_day_data = self._create_complete_day_data(data, current_date)
-            
-            if complete_day_data:  # Se conseguiu criar dados para o dia
-                # Armazenar os dados
-                year = current_date.year
-                month = current_date.month
-                day = current_date.day
-                dataset_key = f"{year}-{month:02d}"
-                
-                if dataset_key not in self.dados_processados:
-                    self.dados_processados[dataset_key] = {}
-                
-                # Armazenar dados completos de 24h
-                self.dados_processados[dataset_key][day] = complete_day_data
-                processed_days += 1
-                
-                print(f"🔧 Dia {current_date}: {len(complete_day_data)} horas processadas")
-            
-            current_date += timedelta(days=1)
-        
-        return processed_days
-
-    def _create_complete_day_data(self, data, target_date):
-        """
-        🔧 FUNÇÃO CHAVE: Cria dados completos para todas as 24 horas de um dia
-        
-        Estratégia:
-        1. Para cada hora (00:00-23:00), procura dados nos .dat
-        2. Calcula média dos registros de 10 em 10 minutos da hora
-        3. Se não há dados, deixa None (será tratado no Excel)
-        """
-        complete_data = {}
-        
-        # Para cada hora do dia (0-23)
-        for hour in range(24):
-            hour_data = self._get_hour_data(data, target_date, hour)
-            
-            if hour_data is not None:
-                complete_data[f"{hour:02d}:00"] = hour_data
-        
-        return complete_data
-
-    def _get_hour_data(self, data, target_date, hour):
-        """
-        🔧 EXTRAI DADOS DE UMA HORA ESPECÍFICA (média dos registros de 10 em 10 min)
-        """
-        try:
-            # Criar datetime para a hora específica
-            start_time = datetime.combine(target_date, datetime.min.time()) + timedelta(hours=hour)
-            end_time = start_time + timedelta(hours=1)
-            
-            # Filtrar dados da hora
-            hour_mask = (data.index >= start_time) & (data.index < end_time)
-            hour_records = data[hour_mask]
-            
-            if len(hour_records) == 0:
-                return None
-            
-            # 🔧 CALCULAR MÉDIAS DOS REGISTROS DA HORA
-            return {
-                'Temperatura': round(hour_records['Temp_Avg'].mean(), 2),
-                'Piranometro_1': round(hour_records['Pir1_Avg'].mean() / 1000, 3),  # Converter W/m² para kW/m²
-                'Piranometro_2': round(hour_records['Pir2_Avg'].mean() / 1000, 3),
-                'Piranometro_Alab': round(hour_records['PirALB_Avg'].mean() / 1000, 3),
-                'Umidade_Relativa': round(hour_records['RH_Avg'].mean(), 2),
-                'Velocidade_Vento': round(hour_records['Ane_Avg'].mean(), 2)
-            }
-        
-        except Exception as e:
-            print(f"Erro ao processar hora {hour} do dia {target_date}: {e}")
-            return None
-
-    def update_excel_file(self, excel_file):
-        """
-        🔧 ATUALIZA EXCEL COM PREENCHIMENTO COMPLETO 00:00-23:00
-        """
-        if not self.dados_processados:
-            return False, "Nenhum dado processado!"
-
-        try:
-            # Salvar arquivo Excel temporariamente
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
-                tmp_file.write(excel_file.read())
-                self.excel_path = tmp_file.name
-
-            wb = load_workbook(self.excel_path)
-            
-            total_hours_updated = 0
-            
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            total_months = len(self.dados_processados)
-            
-            # Processar cada mês
-            for i, (dataset_key, month_data) in enumerate(self.dados_processados.items()):
-                ano, mes = dataset_key.split('-')
-                mes_numero = int(mes)
-                
-                status_text.text(f"Atualizando análise diária {mes}/{ano}...")
-
-                # 🔧 ATUALIZAR ANÁLISE DIÁRIA
-                aba_diaria = self._find_daily_sheet(wb.sheetnames, mes_numero)
-                if aba_diaria:
-                    try:
-                        ws_diaria = wb[aba_diaria]
-                        hours_updated = self._update_complete_daily_data(ws_diaria, month_data)
-                        total_hours_updated += hours_updated
-
-                        if aba_diaria not in self.abas_diarias_atualizadas:
-                            self.abas_diarias_atualizadas.append(aba_diaria)
-                    except Exception as e:
-                        return False, f"Erro na análise diária: {e}"
-                
-                progress_bar.progress((i + 1) / total_months)
-
-            # Salvar alterações
-            wb.save(self.excel_path)
-            status_text.text("Atualização concluída!")
-
-            if total_hours_updated > 0:
-                return True, f"✅ Sucesso! {total_hours_updated} horas atualizadas com preenchimento completo 00:00-23:00"
-            else:
-                return False, "Nenhum dado foi atualizado"
-
-        except Exception as e:
-            return False, f"Erro geral: {e}"
-
-    def _update_complete_daily_data(self, ws, month_data):
-        """
-        🔧 ATUALIZA PLANILHA COM DADOS COMPLETOS DE 24H
-        """
-        total_hours_updated = 0
-
-        for dia_numero, day_data in month_data.items():
-            print(f"🔧 Atualizando dia {dia_numero} com {len(day_data)} horas")
-            
-            # Para cada hora do dia (00:00-23:00)
-            for hour in range(24):
-                hour_str = f"{hour:02d}:00"
-                
-                # Linha na planilha (00:00 = linha 3, 01:00 = linha 4, etc.)
-                row_num = hour + 3
-                
-                # Se há dados para esta hora
-                if hour_str in day_data:
-                    hour_values = day_data[hour_str]
-                    
-                    # Atualizar cada variável
-                    for variable, value in hour_values.items():
-                        col_letter = self._get_column_for_variable_and_day(variable, dia_numero)
-                        
-                        if col_letter and value is not None:
-                            try:
-                                cell_ref = f'{col_letter}{row_num}'
-                                ws[cell_ref] = value
-                                total_hours_updated += 1
-                                print(f"    {hour_str} {variable} = {value} -> {cell_ref}")
-                            except Exception as e:
-                                print(f"    Erro ao escrever {variable} no dia {dia_numero}, hora {hour_str}: {e}")
-
-        return total_hours_updated
-
-    def _find_daily_sheet(self, sheet_names, mes_numero):
-        """Encontra aba de análise diária"""
-        mes_str = f"{mes_numero:02d}"
-
-        possible_names = [
-            f"{mes_str}-Analise Diaria",
-            f"{mes_str}-Analyse Diaria",
-            f"{mes_str} Analise Diaria",
-            f"Analise Diaria {mes_str}"
-        ]
-
-        for name in possible_names:
-            if name in sheet_names:
-                return name
-
-        # Buscar por padrão
-        for sheet_name in sheet_names:
-            if mes_str in sheet_name and "Diaria" in sheet_name:
-                return sheet_name
-
-        return None
-
-    def _get_column_for_variable_and_day(self, variable, dia_numero):
-        """
-        🔧 CALCULA COLUNA CORRETA BASEADA NA ESTRUTURA EXCEL
-        """
-        if variable not in self.column_mapping:
-            return None
-
-        # Obter coluna inicial para a variável
-        start_col_letter = self.column_mapping[variable]['start_col']
-        
-        # Converter letra da coluna para número
-        start_col_num = self._column_letter_to_number(start_col_letter)
-        
-        # Para Temperatura: Dia20 = coluna B, Dia21 = coluna C, etc.
-        # Para outras variáveis: Dia1 = start_col, Dia2 = start_col + 1, etc.
-        if variable == 'Temperatura':
-            # Temperatura_Dia20 está na coluna B, então:
-            # Dia20 = B (coluna 2), Dia21 = C (coluna 3), etc.
-            target_col_num = start_col_num + (dia_numero - 20)
+        if self.dados_processados:
+            return True
         else:
-            # Para outras variáveis: Dia1 = start_col, Dia2 = start_col + 1, etc.
-            target_col_num = start_col_num + (dia_numero - 1)
-        
-        # Converter de volta para letra
-        return get_column_letter(target_col_num)
-    
-    def _column_letter_to_number(self, column_letter):
-        """Converte letra da coluna para número (A=1, B=2, etc.)"""
-        result = 0
-        for char in column_letter:
-            result = result * 26 + (ord(char) - ord('A') + 1)
-        return result
-
-    def get_updated_excel_file(self):
-        """Retorna o arquivo Excel atualizado"""
-        if self.excel_path and os.path.exists(self.excel_path):
-            with open(self.excel_path, 'rb') as f:
-                return f.read()
-        return None
+            return False
 
     def _show_file_processing_summary(self):
-        """Mostra resumo detalhado do processamento"""
+        """Mostra resumo detalhado do processamento de cada arquivo"""
         if hasattr(self, 'file_processing_info') and self.file_processing_info:
             st.markdown("---")
             st.markdown("### 📄 Resumo do Processamento por Arquivo")
             
+            # Criar DataFrame com as informações
             df_files = pd.DataFrame(self.file_processing_info)
             
             # Calcular totais
@@ -472,55 +258,337 @@ class RealWeatherProcessor:
             # Tabela detalhada
             st.markdown("#### 📋 Detalhes por Arquivo")
             
+            # Renomear colunas para exibição
             df_display = df_files.copy()
             df_display.columns = [
                 'Arquivo', 'Registros', 'Início', 'Fim', 
                 'Dias (Span)', 'Dias Processados', 'Status'
             ]
             
+            # Formatar números
             df_display['Registros'] = df_display['Registros'].apply(lambda x: f"{x:,}" if x > 0 else "0")
             
             st.dataframe(df_display, use_container_width=True)
 
-    def show_final_summary(self):
-        """Mostra resumo final dos dados processados"""
+    def _process_monthly_and_daily_data(self, data):
+        """
+        Processa dados para análises mensais E diárias simultaneamente
+        Retorna o número de dias processados
+        """
+        mes_numero = data.index[0].month
+        ano = data.index[0].year
+        dataset_key = f"{ano}-{mes_numero:02d}"
+
+        if dataset_key not in self.dados_processados:
+            self.dados_processados[dataset_key] = {
+                'monthly_data': {},  # Para análise mensal
+                'daily_data': {}     # Para análise diária
+            }
+
+        # Processar dados diários (análise mensal)
+        data['date'] = data.index.date
+        days_processed = 0
+        
+        for date in data['date'].unique():
+            day_data = data[data['date'] == date]
+            dia_numero = date.day
+
+            # Estatísticas diárias para análise mensal
+            stats = self._calculate_daily_statistics(day_data)
+            self.dados_processados[dataset_key]['monthly_data'][dia_numero] = stats
+
+            # Dados horários para análise diária
+            hourly_data = self._process_hourly_data_for_day(day_data)
+            if dia_numero not in self.dados_processados[dataset_key]['daily_data']:
+                self.dados_processados[dataset_key]['daily_data'][dia_numero] = {}
+            self.dados_processados[dataset_key]['daily_data'][dia_numero].update(hourly_data)
+            
+            days_processed += 1
+        
+        return days_processed
+
+    def _process_hourly_data_for_day(self, day_data):
+        """Processa dados horários para um dia específico"""
+        day_data['hour'] = day_data.index.hour
+        hourly_averages = {}
+
+        for hour in range(24):
+            hour_data = day_data[day_data['hour'] == hour]
+
+            if len(hour_data) > 0:
+                hourly_averages[f"{hour:02d}:00"] = {
+                    'Temperatura': round(hour_data['Temp_Avg'].mean(), 2),
+                    'Piranometro_1': round(hour_data['Pir1_Avg'].mean() / 1000, 3),
+                    'Piranometro_2': round(hour_data['Pir2_Avg'].mean() / 1000, 3),
+                    'Piranometro_Alab': round(hour_data['PirALB_Avg'].mean() / 1000, 3),
+                    'Umidade_Relativa': round(hour_data['RH_Avg'].mean(), 2),
+                    'Velocidade_Vento': round(hour_data['Ane_Avg'].mean(), 2)
+                }
+            else:
+                hourly_averages[f"{hour:02d}:00"] = {
+                    'Temperatura': 0, 'Piranometro_1': 0, 'Piranometro_2': 0,
+                    'Piranometro_Alab': 0, 'Umidade_Relativa': 0, 'Velocidade_Vento': 0
+                }
+
+        return hourly_averages
+
+    def _calculate_daily_statistics(self, data):
+        """Calcula estatísticas diárias para análise mensal"""
+        stats = {}
+        variables = ['Temp', 'Pir1', 'Pir2', 'PirALB', 'RH', 'Ane', 'Batt', 'LoggTemp', 'LitBatt']
+
+        for var in variables:
+            stats[var] = {
+                'min': data[f'{var}_Min'].min(),
+                'max': data[f'{var}_Max'].max(),
+                'avg': data[f'{var}_Avg'].mean(),
+                'outliers': self._count_outliers(data, var)
+            }
+
+        return stats
+
+    def _count_outliers(self, data, variable):
+        """Conta outliers usando método IQR"""
+        series = data[f'{variable}_Avg'].dropna()
+        if len(series) == 0:
+            return 0
+
+        q1 = series.quantile(0.25)
+        q3 = series.quantile(0.75)
+        iqr = q3 - q1
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+
+        outliers = series[(series < lower_bound) | (series > upper_bound)]
+        return len(outliers)
+
+    def update_excel_file(self, excel_file):
+        """
+        Atualiza automaticamente análises mensais E diárias no Excel
+        """
+        if not self.dados_processados:
+            return False, "Nenhum dado processado!"
+
+        try:
+            # Salvar arquivo Excel temporariamente
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+                tmp_file.write(excel_file.read())
+                self.excel_path = tmp_file.name
+
+            wb = load_workbook(self.excel_path)
+            
+            sucesso_mensal = 0
+            sucesso_diario = 0
+            
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            total_months = len(self.dados_processados)
+            
+            # Processar cada mês
+            for i, (dataset_key, month_data) in enumerate(self.dados_processados.items()):
+                ano, mes = dataset_key.split('-')
+                mes_numero = int(mes)
+                
+                status_text.text(f"Atualizando mês {mes}/{ano}...")
+
+                # ANÁLISE MENSAL
+                aba_mensal = self._find_sheet(wb.sheetnames, mes_numero, "Mensal")
+                if aba_mensal:
+                    try:
+                        ws_mensal = wb[aba_mensal]
+                        dias_mensal = self._update_monthly_data(ws_mensal, month_data['monthly_data'])
+
+                        if aba_mensal not in self.abas_mensais_atualizadas:
+                            self.abas_mensais_atualizadas.append(aba_mensal)
+                        sucesso_mensal += dias_mensal
+                    except Exception as e:
+                        return False, f"Erro na análise mensal: {e}"
+
+                # ANÁLISE DIÁRIA
+                aba_diaria = self._find_sheet(wb.sheetnames, mes_numero, "Diaria")
+                if aba_diaria:
+                    try:
+                        ws_diaria = wb[aba_diaria]
+                        dias_diario = self._update_daily_data(ws_diaria, month_data['daily_data'])
+
+                        if aba_diaria not in self.abas_diarias_atualizadas:
+                            self.abas_diarias_atualizadas.append(aba_diaria)
+                        sucesso_diario += dias_diario
+                    except Exception as e:
+                        return False, f"Erro na análise diária: {e}"
+                
+                progress_bar.progress((i + 1) / total_months)
+
+            # Salvar alterações
+            wb.save(self.excel_path)
+            status_text.text("Atualização concluída!")
+
+            if sucesso_mensal > 0 and sucesso_diario > 0:
+                return True, f"Sucesso! Análise Mensal: {sucesso_mensal} dias, Análise Diária: {sucesso_diario} dias"
+            else:
+                return False, "Nenhum dado foi atualizado"
+
+        except Exception as e:
+            return False, f"Erro geral: {e}"
+
+    def _find_sheet(self, sheet_names, mes_numero, tipo):
+        """Encontra aba mensal ou diária"""
+        mes_str = f"{mes_numero:02d}"
+
+        possible_names = [
+            f"{mes_str}-Analise {tipo}",
+            f"{mes_str}-Analyse {tipo}",
+            f"{mes_str} Analise {tipo}",
+            f"Analise {tipo} {mes_str}"
+        ]
+
+        for name in possible_names:
+            if name in sheet_names:
+                return name
+
+        # Buscar por padrão
+        for sheet_name in sheet_names:
+            if mes_str in sheet_name and tipo in sheet_name:
+                return sheet_name
+
+        return None
+
+    def _update_monthly_data(self, ws, monthly_data):
+        """Atualiza dados da análise mensal"""
+        dias_atualizados = 0
+
+        for dia_numero, stats in monthly_data.items():
+            # Primeira seção (linhas 3-33)
+            target_row = dia_numero + 2
+
+            # Temperatura
+            ws[f'B{target_row}'] = round(stats['Temp']['min'], 2)
+            ws[f'C{target_row}'] = round(stats['Temp']['max'], 2)
+            ws[f'D{target_row}'] = round(stats['Temp']['avg'], 2)
+            ws[f'E{target_row}'] = int(stats['Temp']['outliers'])
+
+            # Piranômetro 1 (KW)
+            ws[f'H{target_row}'] = round(stats['Pir1']['min'] / 1000, 2)
+            ws[f'I{target_row}'] = round(stats['Pir1']['max'] / 1000, 2)
+            ws[f'J{target_row}'] = round(stats['Pir1']['avg'] / 1000, 2)
+            ws[f'K{target_row}'] = int(stats['Pir1']['outliers'])
+
+            # Piranômetro 2 (KW)
+            ws[f'N{target_row}'] = round(stats['Pir2']['min'] / 1000, 2)
+            ws[f'O{target_row}'] = round(stats['Pir2']['max'] / 1000, 2)
+            ws[f'P{target_row}'] = round(stats['Pir2']['avg'] / 1000, 2)
+            ws[f'Q{target_row}'] = int(stats['Pir2']['outliers'])
+
+            # Piranômetro ALB (KW)
+            ws[f'T{target_row}'] = round(stats['PirALB']['min'] / 1000, 2)
+            ws[f'U{target_row}'] = round(stats['PirALB']['max'] / 1000, 2)
+            ws[f'V{target_row}'] = round(stats['PirALB']['avg'] / 1000, 2)
+            ws[f'W{target_row}'] = int(stats['PirALB']['outliers'])
+
+            # Umidade Relativa
+            ws[f'Z{target_row}'] = round(stats['RH']['min'], 2)
+            ws[f'AA{target_row}'] = round(stats['RH']['max'], 2)
+            ws[f'AB{target_row}'] = round(stats['RH']['avg'], 2)
+            ws[f'AC{target_row}'] = int(stats['RH']['outliers'])
+
+            # Segunda seção (linhas 37-67)
+            target_row_2 = dia_numero + 36
+
+            # Velocidade do Vento
+            ws[f'B{target_row_2}'] = round(stats['Ane']['min'], 2)
+            ws[f'C{target_row_2}'] = round(stats['Ane']['max'], 2)
+            ws[f'D{target_row_2}'] = round(stats['Ane']['avg'], 2)
+            ws[f'E{target_row_2}'] = int(stats['Ane']['outliers'])
+
+            # Bateria
+            ws[f'H{target_row_2}'] = round(stats['Batt']['min'], 2)
+            ws[f'I{target_row_2}'] = round(stats['Batt']['max'], 2)
+            ws[f'J{target_row_2}'] = round(stats['Batt']['avg'], 2)
+            ws[f'K{target_row_2}'] = int(stats['Batt']['outliers'])
+
+            # LitBat
+            ws[f'N{target_row_2}'] = round(stats['LitBatt']['min'], 2)
+            ws[f'O{target_row_2}'] = round(stats['LitBatt']['max'], 2)
+            ws[f'P{target_row_2}'] = round(stats['LitBatt']['avg'], 2)
+            ws[f'Q{target_row_2}'] = int(stats['LitBatt']['outliers'])
+
+            # LogTemp
+            ws[f'T{target_row_2}'] = round(stats['LoggTemp']['min'], 2)
+            ws[f'U{target_row_2}'] = round(stats['LoggTemp']['max'], 2)
+            ws[f'V{target_row_2}'] = round(stats['LoggTemp']['avg'], 2)
+            ws[f'W{target_row_2}'] = int(stats['LoggTemp']['outliers'])
+
+            dias_atualizados += 1
+
+        return dias_atualizados
+
+    def _update_daily_data(self, ws, daily_data):
+        """Atualiza dados da análise diária"""
+        dias_atualizados = 0
+
+        for dia_numero, day_hourly_data in daily_data.items():
+            for hour_str, hour_data in day_hourly_data.items():
+                hour_num = int(hour_str[:2])
+                row_num = hour_num + 3  # 00:00 = linha 3
+
+                if row_num < 3:
+                    continue
+
+                for variable, value in hour_data.items():
+                    col_letter = self._get_column_for_variable_and_day(variable, dia_numero)
+                    if col_letter and row_num != 2:
+                        try:
+                            ws[f'{col_letter}{row_num}'] = value
+                        except:
+                            pass
+
+            dias_atualizados += 1
+
+        return dias_atualizados
+
+    def _get_column_for_variable_and_day(self, variable, dia_numero):
+        """Calcula letra da coluna para análise diária"""
+        if variable not in self.column_mapping:
+            return None
+
+        start_col_num = self.column_mapping[variable]['start_num']
+        target_col_num = start_col_num + (dia_numero - 1)
+        return get_column_letter(target_col_num)
+
+    def get_updated_excel_file(self):
+        """Retorna o arquivo Excel atualizado"""
+        if self.excel_path and os.path.exists(self.excel_path):
+            with open(self.excel_path, 'rb') as f:
+                return f.read()
+        return None
+
+    def show_summary(self):
+        """Mostra resumo dos dados processados"""
         if not self.dados_processados:
             return None
 
-        total_days = 0
-        total_hours = 0
-        
         summary_data = []
+        total_days = 0
         
         for dataset_key, month_data in self.dados_processados.items():
             ano, mes = dataset_key.split('-')
-            dias_no_mes = len(month_data)
+            dias_no_mes = len(month_data['monthly_data'])
             total_days += dias_no_mes
-            
-            # Contar horas processadas
-            horas_processadas = 0
-            for dia_numero, day_data in month_data.items():
-                horas_processadas += len(day_data)
-            
-            total_hours += horas_processadas
-            
             summary_data.append({
                 'Mês/Ano': f"{mes}/{ano}",
-                'Dias Processados': dias_no_mes,
-                'Horas Processadas': horas_processadas,
-                'Cobertura (%)': f"{(horas_processadas / (dias_no_mes * 24) * 100):.1f}%"
+                'Dias Processados': dias_no_mes
             })
 
-        return summary_data, total_days, total_hours
+        return summary_data, total_days
 
     def show_data_preview(self):
-        """Preview focada em dados reais"""
+        """Mostra preview detalhada dos dados processados"""
         if not self.dados_processados:
             return
         
         st.markdown("---")
-        st.markdown("### 🔍 Preview dos Dados Processados (Preenchimento Completo 24h)")
-        st.info("🎯 **Preenchimento Completo**: Todas as horas 00:00-23:00 preenchidas")
+        st.markdown("### 🔍 Preview dos Dados Processados")
         
         # Tabs para diferentes visualizações
         tab1, tab2, tab3, tab4 = st.tabs(["📊 Estatísticas Gerais", "📈 Gráficos", "📋 Dados Mensais", "⏰ Dados Horários"])
@@ -541,78 +609,63 @@ class RealWeatherProcessor:
         """Mostra estatísticas gerais dos dados"""
         st.markdown("#### 📊 Estatísticas por Variável")
         
-        total_records = 0
-        total_days = 0
-        total_hours = 0
+        # Coletar todas as estatísticas
+        all_stats = {}
+        variables = ['Temp', 'Pir1', 'Pir2', 'PirALB', 'RH', 'Ane', 'Batt', 'LoggTemp', 'LitBatt']
+        var_names = {
+            'Temp': 'Temperatura (°C)',
+            'Pir1': 'Piranômetro 1 (kW/m²)',
+            'Pir2': 'Piranômetro 2 (kW/m²)',
+            'PirALB': 'Piranômetro Albedo (kW/m²)',
+            'RH': 'Umidade Relativa (%)',
+            'Ane': 'Velocidade Vento (m/s)',
+            'Batt': 'Bateria (V)',
+            'LoggTemp': 'Temp. Logger (°C)',
+            'LitBatt': 'Bateria Lítio (V)'
+        }
         
-        for dataset_key, month_data in self.dados_processados.items():
-            total_days += len(month_data)
-            for dia_numero, day_data in month_data.items():
-                total_hours += len(day_data)
-                for hour_str, hour_data in day_data.items():
-                    total_records += len(hour_data)  # 6 variáveis por hora
+        for var in variables:
+            all_values = []
+            outliers_count = 0
+            
+            for dataset_key, month_data in self.dados_processados.items():
+                for dia_numero, stats in month_data['monthly_data'].items():
+                    if var in stats:
+                        all_values.extend([stats[var]['min'], stats[var]['max'], stats[var]['avg']])
+                        outliers_count += stats[var]['outliers']
+            
+            if all_values:
+                all_stats[var_names[var]] = {
+                    'Mínimo Global': round(min(all_values), 2),
+                    'Máximo Global': round(max(all_values), 2),
+                    'Média Global': round(sum(all_values) / len(all_values), 2),
+                    'Total Outliers': outliers_count
+                }
         
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown(f"""
-            <div class="metric-card">
-                <h4>📅 Total de Dias</h4>
-                <h2>{total_days}</h2>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""
-            <div class="metric-card">
-                <h4>⏰ Horas Processadas</h4>
-                <h2>{total_hours}</h2>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            cobertura = (total_hours / (total_days * 24) * 100) if total_days > 0 else 0
-            st.markdown(f"""
-            <div class="metric-card">
-                <h4>📈 Cobertura</h4>
-                <h2>{cobertura:.1f}%</h2>
-            </div>
-            """, unsafe_allow_html=True)
+        # Mostrar em tabela
+        if all_stats:
+            df_stats = pd.DataFrame(all_stats).T
+            st.dataframe(df_stats, use_container_width=True)
 
     def _show_charts(self):
         """Mostra gráficos dos dados"""
         try:
             st.markdown("#### 📈 Visualizações")
             
-            # Preparar dados para gráficos (média diária)
+            # Preparar dados para gráficos
             chart_data = []
             
             for dataset_key, month_data in self.dados_processados.items():
                 ano, mes = dataset_key.split('-')
-                for dia_numero, day_data in month_data.items():
-                    # Calcular médias diárias
-                    temp_values = []
-                    pir1_values = []
-                    pir2_values = []
-                    humidity_values = []
-                    wind_values = []
-                    
-                    for hour_str, hour_data in day_data.items():
-                        temp_values.append(hour_data['Temperatura'])
-                        pir1_values.append(hour_data['Piranometro_1'])
-                        pir2_values.append(hour_data['Piranometro_2'])
-                        humidity_values.append(hour_data['Umidade_Relativa'])
-                        wind_values.append(hour_data['Velocidade_Vento'])
-                    
-                    if temp_values:  # Se há dados
-                        chart_data.append({
-                            'Data': f"{ano}-{mes}-{dia_numero:02d}",
-                            'Temperatura Média': round(sum(temp_values) / len(temp_values), 2),
-                            'Radiação Solar 1': round(sum(pir1_values) / len(pir1_values), 3),
-                            'Radiação Solar 2': round(sum(pir2_values) / len(pir2_values), 3),
-                            'Umidade Relativa': round(sum(humidity_values) / len(humidity_values), 2),
-                            'Velocidade Vento': round(sum(wind_values) / len(wind_values), 2)
-                        })
+                for dia_numero, stats in month_data['monthly_data'].items():
+                    chart_data.append({
+                        'Data': f"{ano}-{mes}-{dia_numero:02d}",
+                        'Temperatura Média': round(stats['Temp']['avg'], 2),
+                        'Radiação Solar 1': round(stats['Pir1']['avg'] / 1000, 3),
+                        'Radiação Solar 2': round(stats['Pir2']['avg'] / 1000, 3),
+                        'Umidade Relativa': round(stats['RH']['avg'], 2),
+                        'Velocidade Vento': round(stats['Ane']['avg'], 2)
+                    })
             
             if chart_data:
                 df_chart = pd.DataFrame(chart_data)
@@ -649,7 +702,7 @@ class RealWeatherProcessor:
     def _show_monthly_data_preview(self):
         """Mostra preview dos dados mensais"""
         try:
-            st.markdown("#### 📋 Resumo Mensal")
+            st.markdown("#### 📋 Dados de Análise Mensal")
             
             # Seletor de mês
             available_months = list(self.dados_processados.keys())
@@ -657,44 +710,35 @@ class RealWeatherProcessor:
                 selected_month = st.selectbox("Selecione o mês para visualizar:", available_months)
                 
                 if selected_month in self.dados_processados:
-                    month_data = self.dados_processados[selected_month]
+                    month_data = self.dados_processados[selected_month]['monthly_data']
                     
                     # Preparar dados para tabela
                     table_data = []
-                    for dia, day_data in month_data.items():
-                        # Calcular estatísticas do dia
-                        if day_data:
-                            temp_values = [h['Temperatura'] for h in day_data.values()]
-                            pir1_values = [h['Piranometro_1'] for h in day_data.values()]
-                            humidity_values = [h['Umidade_Relativa'] for h in day_data.values()]
-                            wind_values = [h['Velocidade_Vento'] for h in day_data.values()]
-                            
-                            table_data.append({
-                                'Dia': dia,
-                                'Horas Processadas': len(day_data),
-                                'Temp Média': round(sum(temp_values) / len(temp_values), 2),
-                                'Temp Min': round(min(temp_values), 2),
-                                'Temp Max': round(max(temp_values), 2),
-                                'Rad Solar Média': round(sum(pir1_values) / len(pir1_values), 3),
-                                'Umidade Média': round(sum(humidity_values) / len(humidity_values), 2),
-                                'Vento Média': round(sum(wind_values) / len(wind_values), 2)
-                            })
+                    for dia, stats in month_data.items():
+                        table_data.append({
+                            'Dia': dia,
+                            'Temp Min': round(stats['Temp']['min'], 2),
+                            'Temp Max': round(stats['Temp']['max'], 2),
+                            'Temp Média': round(stats['Temp']['avg'], 2),
+                            'Rad Solar 1 (kW)': round(stats['Pir1']['avg'] / 1000, 3),
+                            'Rad Solar 2 (kW)': round(stats['Pir2']['avg'] / 1000, 3),
+                            'Umidade (%)': round(stats['RH']['avg'], 2),
+                            'Vento (m/s)': round(stats['Ane']['avg'], 2),
+                            'Outliers Total': stats['Temp']['outliers'] + stats['Pir1']['outliers'] + stats['RH']['outliers']
+                        })
                     
-                    if table_data:
-                        df_monthly = pd.DataFrame(table_data)
-                        df_monthly = df_monthly.sort_values('Dia')
-                        st.dataframe(df_monthly, use_container_width=True)
-                    else:
-                        st.info("Nenhum dado disponível para este mês.")
+                    df_monthly = pd.DataFrame(table_data)
+                    df_monthly = df_monthly.sort_values('Dia')
+                    st.dataframe(df_monthly, use_container_width=True)
             else:
                 st.info("Nenhum dado mensal disponível.")
         except Exception as e:
             st.error(f"Erro ao mostrar dados mensais: {str(e)}")
 
     def _show_hourly_data_preview(self):
-        """Preview dos dados horários"""
+        """Mostra preview dos dados horários"""
         try:
-            st.markdown("#### ⏰ Dados Horários Detalhados")
+            st.markdown("#### ⏰ Dados de Análise Diária (Horários)")
             
             # Seletores
             available_months = list(self.dados_processados.keys())
@@ -706,87 +750,48 @@ class RealWeatherProcessor:
                 
                 with col2:
                     if selected_month in self.dados_processados:
-                        available_days = list(self.dados_processados[selected_month].keys())
+                        available_days = list(self.dados_processados[selected_month]['daily_data'].keys())
                         selected_day = st.selectbox("Dia:", sorted(available_days), key="hourly_day")
                 
-                if selected_month in self.dados_processados and selected_day in self.dados_processados[selected_month]:
-                    day_data = self.dados_processados[selected_month][selected_day]
+                if selected_month in self.dados_processados and selected_day in self.dados_processados[selected_month]['daily_data']:
+                    day_data = self.dados_processados[selected_month]['daily_data'][selected_day]
                     
-                    # Mostrar estatísticas do dia
-                    total_horas = len(day_data)
-                    horas_disponiveis = sorted(day_data.keys())
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.markdown(f"""
-                        <div class="metric-card">
-                            <h4>⏰ Horas Processadas</h4>
-                            <h2>{total_horas}/24</h2>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    with col2:
-                        if horas_disponiveis:
-                            primeiro = horas_disponiveis[0]
-                            ultimo = horas_disponiveis[-1]
-                            st.markdown(f"""
-                            <div class="metric-card">
-                                <h4>📅 Período</h4>
-                                <h2>{primeiro} - {ultimo}</h2>
-                            </div>
-                            """, unsafe_allow_html=True)
-                    
-                    with col3:
-                        cobertura = (total_horas / 24 * 100)
-                        st.markdown(f"""
-                        <div class="metric-card">
-                            <h4>📈 Cobertura</h4>
-                            <h2>{cobertura:.1f}%</h2>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    
-                    # Tabela de dados horários
+                    # Preparar dados horários
                     hourly_table = []
-                    for hour_str in sorted(day_data.keys()):
-                        data_values = day_data[hour_str]
-                        
+                    for hour, data in day_data.items():
                         hourly_table.append({
-                            'Hora': hour_str,
-                            'Temperatura (°C)': data_values['Temperatura'],
-                            'Piranômetro 1 (kW)': data_values['Piranometro_1'],
-                            'Piranômetro 2 (kW)': data_values['Piranometro_2'],
-                            'Piranômetro Albedo (kW)': data_values['Piranometro_Alab'],
-                            'Umidade Relativa (%)': data_values['Umidade_Relativa'],
-                            'Velocidade Vento (m/s)': data_values['Velocidade_Vento']
+                            'Hora': hour,
+                            'Temperatura': data['Temperatura'],
+                            'Piranômetro 1': data['Piranometro_1'],
+                            'Piranômetro 2': data['Piranometro_2'],
+                            'Piranômetro Albedo': data['Piranometro_Alab'],
+                            'Umidade Relativa': data['Umidade_Relativa'],
+                            'Velocidade Vento': data['Velocidade_Vento']
                         })
                     
                     df_hourly = pd.DataFrame(hourly_table)
                     
                     # Mostrar tabela
-                    st.markdown("**📋 Dados Horários**")
                     st.dataframe(df_hourly, use_container_width=True)
                     
                     # Gráfico horário
-                    if len(df_hourly) > 1:
-                        st.markdown("**📊 Variação Horária**")
-                        
-                        # Preparar dados para gráfico
-                        df_hourly['Hora_num'] = df_hourly['Hora'].str[:2].astype(int)
-                        df_hourly = df_hourly.sort_values('Hora_num')
-                        
-                        chart_cols = st.columns(2)
-                        
-                        with chart_cols[0]:
-                            st.markdown("*Temperatura e Umidade*")
-                            temp_humidity = df_hourly.set_index('Hora')[['Temperatura (°C)', 'Umidade Relativa (%)']]
-                            st.line_chart(temp_humidity)
-                        
-                        with chart_cols[1]:
-                            st.markdown("*Radiação Solar*")
-                            radiation = df_hourly.set_index('Hora')[['Piranômetro 1 (kW)', 'Piranômetro 2 (kW)', 'Piranômetro Albedo (kW)']]
-                            st.line_chart(radiation)
-                
+                    st.markdown("**📊 Variação Horária**")
+                    
+                    # Preparar dados para gráfico
+                    df_hourly['Hora_num'] = df_hourly['Hora'].str[:2].astype(int)
+                    df_hourly = df_hourly.sort_values('Hora_num')
+                    
+                    chart_cols = st.columns(2)
+                    
+                    with chart_cols[0]:
+                        st.markdown("*Temperatura e Umidade*")
+                        temp_humidity = df_hourly.set_index('Hora')[['Temperatura', 'Umidade Relativa']]
+                        st.line_chart(temp_humidity)
+                    
+                    with chart_cols[1]:
+                        st.markdown("*Radiação Solar*")
+                        radiation = df_hourly.set_index('Hora')[['Piranômetro 1', 'Piranômetro 2', 'Piranômetro Albedo']]
+                        st.line_chart(radiation)
                 else:
                     st.info("Selecione um mês e dia para visualizar os dados horários.")
             else:
@@ -794,19 +799,18 @@ class RealWeatherProcessor:
         except Exception as e:
             st.error(f"Erro ao mostrar dados horários: {str(e)}")
 
-
 def main():
     # Cabeçalho principal
     st.markdown("""
     <div class="main-header">
         <h1>🌤️ Medições Usina Geradora Floriano</h1>
-        <p>Processador Corrigido - Preenchimento Completo 00:00-23:00</p>
+        <p>Processador Completo de Dados Meteorológicos - Análises Mensais e Diárias</p>
     </div>
     """, unsafe_allow_html=True)
 
     # Inicializar o processador
     if 'processor' not in st.session_state:
-        st.session_state.processor = RealWeatherProcessor()
+        st.session_state.processor = CompleteWeatherProcessor()
 
     # Sidebar com instruções
     with st.sidebar:
@@ -822,25 +826,11 @@ def main():
         """)
         
         st.markdown("---")
-        st.markdown("### ✅ Características Corrigidas")
+        st.markdown("### ℹ️ Sobre")
         st.markdown("""
-        **🔧 PREENCHIMENTO COMPLETO:**
-        - ✅ **24 Horas**: Preenche 00:00-23:00 para cada dia
-        - ✅ **Média dos Registros**: Calcula média dos 6 registros por hora
-        - ✅ **Mapeamento Correto**: Temperatura_Dia20, Dia21, etc.
-        - ✅ **Todas as Variáveis**: Temperatura, Piranômetros, Umidade, Vento
-        """)
-        
-        st.markdown("---")
-        st.markdown("### 📊 Estrutura dos Dados")
-        st.markdown("""
-        **Arquivos .dat processados:**
-        - **352.dat**: 20/06 10:10 → 21/06 10:00
-        - **353.dat**: 21/06 10:10 → 22/06 10:00  
-        - **354.dat**: 22/06 10:10 → 23/06 10:00
-        - **355.dat**: 23/06 10:10 → 24/06 10:00
-        
-        **✅ Resultado: 24h/dia completas!**
+        Este aplicativo processa dados meteorológicos e atualiza automaticamente:
+        - **Análises Mensais**: Estatísticas diárias
+        - **Análises Diárias**: Dados horários
         """)
 
     # Layout principal
@@ -851,7 +841,7 @@ def main():
         excel_file = st.file_uploader(
             "Selecione o arquivo Excel anual",
             type=['xlsx', 'xls'],
-            help="Arquivo Excel com as abas de análise diária"
+            help="Arquivo Excel com as abas de análise mensal e diária"
         )
 
     with col2:
@@ -860,7 +850,7 @@ def main():
             "Selecione os arquivos .dat",
             type=['dat'],
             accept_multiple_files=True,
-            help="Arquivos .dat para preenchimento completo 00:00-23:00"
+            help="Arquivos de dados meteorológicos (.dat)"
         )
 
     # Botão de processamento
@@ -869,44 +859,33 @@ def main():
         
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("🔧 Processar com Preenchimento Completo 24h", use_container_width=True):
-                with st.spinner("Processando com preenchimento completo 00:00-23:00..."):
+            if st.button("🚀 Processar Dados", use_container_width=True):
+                with st.spinner("Processando dados..."):
                     # Processar arquivos .dat
                     success = st.session_state.processor.process_dat_files(dat_files)
                     
                     if success:
-                        st.success("✅ Arquivos .dat processados com preenchimento completo 24h!")
+                        st.success("✅ Arquivos .dat processados com sucesso!")
                         
                         # Mostrar resumo
-                        summary_result = st.session_state.processor.show_final_summary()
-                        if summary_result and len(summary_result) == 3:
-                            summary_data, total_days, total_hours = summary_result
+                        summary_data, total_days = st.session_state.processor.show_summary()
+                        if summary_data:
+                            st.markdown("### 📊 Resumo dos Dados Processados")
                             
-                            st.markdown("### 📊 Resumo dos Dados Processados (24h Completas)")
-                            
-                            col1, col2, col3 = st.columns(3)
+                            col1, col2 = st.columns(2)
                             with col1:
                                 st.markdown(f"""
                                 <div class="metric-card">
-                                    <h4>📅 Total de Dias</h4>
-                                    <h2>{total_days}</h2>
+                                    <h4>📅 Total de Meses</h4>
+                                    <h2>{len(summary_data)}</h2>
                                 </div>
                                 """, unsafe_allow_html=True)
                             
                             with col2:
                                 st.markdown(f"""
                                 <div class="metric-card">
-                                    <h4>⏰ Horas Processadas</h4>
-                                    <h2>{total_hours}h</h2>
-                                </div>
-                                """, unsafe_allow_html=True)
-                                
-                            with col3:
-                                cobertura = (total_hours / (total_days * 24) * 100) if total_days > 0 else 0
-                                st.markdown(f"""
-                                <div class="metric-card">
-                                    <h4>📈 Cobertura</h4>
-                                    <h2>{cobertura:.1f}%</h2>
+                                    <h4>📊 Total de Dias</h4>
+                                    <h2>{total_days}</h2>
                                 </div>
                                 """, unsafe_allow_html=True)
                             
@@ -922,7 +901,7 @@ def main():
                                 st.info("Os dados foram processados com sucesso, mas houve um problema na visualização da preview.")
                         
                         # Atualizar Excel
-                        st.markdown("### 🔄 Atualizando Excel com Preenchimento Completo...")
+                        st.markdown("### 🔄 Atualizando Excel...")
                         excel_file.seek(0)  # Reset file pointer
                         success, message = st.session_state.processor.update_excel_file(excel_file)
                         
@@ -932,16 +911,14 @@ def main():
                             # Botão de download
                             updated_excel = st.session_state.processor.get_updated_excel_file()
                             if updated_excel:
-                                st.markdown("### 📥 Download do Arquivo Completo")
+                                st.markdown("### 📥 Download do Arquivo Atualizado")
                                 st.download_button(
-                                    label="📥 Baixar Excel com Preenchimento Completo 24h",
+                                    label="📥 Baixar Excel Atualizado",
                                     data=updated_excel,
-                                    file_name=f"analise_anual_completa_24h_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    file_name=f"analise_anual_atualizada_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                     use_container_width=True
                                 )
-                                
-                                st.success("🎯 **SUCESSO!** Todas as horas 00:00-23:00 foram preenchidas no Excel!")
                         else:
                             st.error(f"❌ {message}")
                     else:
@@ -965,7 +942,6 @@ def main():
     st.markdown("""
     <div style="text-align: center; color: #666; padding: 1rem;">
         <p>🌤️ Processador de Dados Meteorológicos | Usina Geradora Floriano</p>
-        <p><strong>🔧 CORRIGIDO FINAL:</strong> Preenchimento completo 00:00-23:00 com mapeamento correto!</p>
     </div>
     """, unsafe_allow_html=True)
 
