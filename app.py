@@ -649,50 +649,12 @@ class CompleteWeatherProcessor:
 
     def _show_charts(self):
         """Mostra gráficos dos dados"""
-        st.markdown("#### 📈 Visualizações")
-        
-        # Preparar dados para gráficos
-        chart_data = []
-        
-        for dataset_key, month_data in self.dados_processados.items():
-            ano, mes = dataset_key.split('-')
-            for dia_numero, stats in month_data['monthly_data'].items():
-                chart_data.append({
-                    'Data': f"{ano}-{mes}-{dia_numero:02d}",
-                    'Temperatura Média': round(stats['Temp']['avg'], 2),
-                    'Radiação Solar 1': round(stats['Pir1']['avg'] / 1000, 3),
-                    'Radiação Solar 2': round(stats['Pir2']['avg'] / 1000, 3),
-                    'Umidade Relativa': round(stats['RH']['avg'], 2),
-                    'Velocidade Vento': round(stats['Ane']['avg'], 2)
-                })
-        
-        if chart_data:
-            df_chart = pd.DataFrame(chart_data)
-            df_chart['Data'] = pd.to_datetime(df_chart['Data'])
-            df_chart = df_chart.sort_values('Data')
-            
-            # Gráfico de temperatura
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**🌡️ Temperatura Média Diária**")
-                st.line_chart(df_chart.set_index('Data')['Temperatura Média'])
-            
-            with col2:
-                st.markdown("**☀️ Radiação Solar Média**")
-                radiation_data = df_chart.set_index('Data')[['Radiação Solar 1', 'Radiação Solar 2']]
-                st.line_chart(radiation_data)
         try:
             st.markdown("#### 📈 Visualizações")
-
-            # Gráfico de umidade e vento
-            col3, col4 = st.columns(2)
+            
             # Preparar dados para gráficos
             chart_data = []
-
-            with col3:
-                st.markdown("**💧 Umidade Relativa**")
-                st.line_chart(df_chart.set_index('Data')['Umidade Relativa'])
+            
             for dataset_key, month_data in self.dados_processados.items():
                 ano, mes = dataset_key.split('-')
                 for dia_numero, stats in month_data['monthly_data'].items():
@@ -704,10 +666,7 @@ class CompleteWeatherProcessor:
                         'Umidade Relativa': round(stats['RH']['avg'], 2),
                         'Velocidade Vento': round(stats['Ane']['avg'], 2)
                     })
-
-            with col4:
-                st.markdown("**💨 Velocidade do Vento**")
-                st.line_chart(df_chart.set_index('Data')['Velocidade Vento'])
+            
             if chart_data:
                 df_chart = pd.DataFrame(chart_data)
                 df_chart['Data'] = pd.to_datetime(df_chart['Data'])
@@ -742,40 +701,14 @@ class CompleteWeatherProcessor:
 
     def _show_monthly_data_preview(self):
         """Mostra preview dos dados mensais"""
-        st.markdown("#### 📋 Dados de Análise Mensal")
-        
-        # Seletor de mês
-        available_months = list(self.dados_processados.keys())
-        if available_months:
-            selected_month = st.selectbox("Selecione o mês para visualizar:", available_months)
         try:
             st.markdown("#### 📋 Dados de Análise Mensal")
-
-            if selected_month in self.dados_processados:
-                month_data = self.dados_processados[selected_month]['monthly_data']
-                
-                # Preparar dados para tabela
-                table_data = []
-                for dia, stats in month_data.items():
-                    table_data.append({
-                        'Dia': dia,
-                        'Temp Min': round(stats['Temp']['min'], 2),
-                        'Temp Max': round(stats['Temp']['max'], 2),
-                        'Temp Média': round(stats['Temp']['avg'], 2),
-                        'Rad Solar 1 (kW)': round(stats['Pir1']['avg'] / 1000, 3),
-                        'Rad Solar 2 (kW)': round(stats['Pir2']['avg'] / 1000, 3),
-                        'Umidade (%)': round(stats['RH']['avg'], 2),
-                        'Vento (m/s)': round(stats['Ane']['avg'], 2),
-                        'Outliers Total': stats['Temp']['outliers'] + stats['Pir1']['outliers'] + stats['RH']['outliers']
-                    })
+            
             # Seletor de mês
             available_months = list(self.dados_processados.keys())
             if available_months:
                 selected_month = st.selectbox("Selecione o mês para visualizar:", available_months)
 
-                df_monthly = pd.DataFrame(table_data)
-                df_monthly = df_monthly.sort_values('Dia')
-                st.dataframe(df_monthly, use_container_width=True)
                 if selected_month in self.dados_processados:
                     month_data = self.dados_processados[selected_month]['monthly_data']
                     
@@ -804,72 +737,22 @@ class CompleteWeatherProcessor:
 
     def _show_hourly_data_preview(self):
         """Mostra preview dos dados horários"""
-        st.markdown("#### ⏰ Dados de Análise Diária (Horários)")
-        
-        # Seletores
-        available_months = list(self.dados_processados.keys())
-        if available_months:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                selected_month = st.selectbox("Mês:", available_months, key="hourly_month")
-            
-            with col2:
-                if selected_month in self.dados_processados:
-                    available_days = list(self.dados_processados[selected_month]['daily_data'].keys())
-                    selected_day = st.selectbox("Dia:", sorted(available_days), key="hourly_day")
         try:
             st.markdown("#### ⏰ Dados de Análise Diária (Horários)")
-
-            if selected_month in self.dados_processados and selected_day in self.dados_processados[selected_month]['daily_data']:
-                day_data = self.dados_processados[selected_month]['daily_data'][selected_day]
-                
-                # Preparar dados horários
-                hourly_table = []
-                for hour, data in day_data.items():
-                    hourly_table.append({
-                        'Hora': hour,
-                        'Temperatura': data['Temperatura'],
-                        'Piranômetro 1': data['Piranometro_1'],
-                        'Piranômetro 2': data['Piranometro_2'],
-                        'Piranômetro Albedo': data['Piranometro_Alab'],
-                        'Umidade Relativa': data['Umidade_Relativa'],
-                        'Velocidade Vento': data['Velocidade_Vento']
-                    })
+            
             # Seletores
             available_months = list(self.dados_processados.keys())
             if available_months:
                 col1, col2 = st.columns(2)
-
-                df_hourly = pd.DataFrame(hourly_table)
+                
                 with col1:
                     selected_month = st.selectbox("Mês:", available_months, key="hourly_month")
-
-                # Mostrar tabela
-                st.dataframe(df_hourly, use_container_width=True)
+                
                 with col2:
                     if selected_month in self.dados_processados:
                         available_days = list(self.dados_processados[selected_month]['daily_data'].keys())
                         selected_day = st.selectbox("Dia:", sorted(available_days), key="hourly_day")
 
-                # Gráfico horário
-                st.markdown("**📊 Variação Horária**")
-                
-                # Preparar dados para gráfico
-                df_hourly['Hora_num'] = df_hourly['Hora'].str[:2].astype(int)
-                df_hourly = df_hourly.sort_values('Hora_num')
-                
-                chart_cols = st.columns(2)
-                
-                with chart_cols[0]:
-                    st.markdown("*Temperatura e Umidade*")
-                    temp_humidity = df_hourly.set_index('Hora')[['Temperatura', 'Umidade Relativa']]
-                    st.line_chart(temp_humidity)
-                
-                with chart_cols[1]:
-                    st.markdown("*Radiação Solar*")
-                    radiation = df_hourly.set_index('Hora')[['Piranômetro 1', 'Piranômetro 2', 'Piranômetro Albedo']]
-                    st.line_chart(radiation)
                 if selected_month in self.dados_processados and selected_day in self.dados_processados[selected_month]['daily_data']:
                     day_data = self.dados_processados[selected_month]['daily_data'][selected_day]
                     
@@ -1011,7 +894,6 @@ def main():
                             st.dataframe(df_summary, use_container_width=True)
 
                             # Preview detalhada dos dados
-                            st.session_state.processor.show_data_preview()
                             try:
                                 st.session_state.processor.show_data_preview()
                             except Exception as e:
