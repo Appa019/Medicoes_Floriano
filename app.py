@@ -741,7 +741,7 @@ def main():
     st.markdown("""
     <div class="main-header">
         <h1>Medições Usina Geradora Floriano</h1>
-        <p>Processador de Dados Meteorológicos - VERSÃO PROCV EXATO</p>
+        <p>Processador de Dados de Medicao</p>
         <p><small>Busca Pontual | Tolerância ±10min | Zero Inferências</small></p>
     </div>
     """, unsafe_allow_html=True)
