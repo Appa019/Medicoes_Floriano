@@ -263,13 +263,13 @@ class ExactWeatherProcessor:
         closest_timestamp = None
         
         for ts in available_timestamps:
-            ts = pd.to_datetime(ts)
-            diff = abs(ts - target_time)
+            ts_converted = pd.to_datetime(ts)
+            diff = abs(ts_converted - target_time)
             
             # Verifica se está dentro da tolerância e é mais próximo
             if diff <= tolerance and diff < min_diff:
                 min_diff = diff
-                closest_timestamp = ts
+                closest_timestamp = ts  # Retorna o timestamp original, não o convertido
         
         return closest_timestamp
 
@@ -359,6 +359,7 @@ class ExactWeatherProcessor:
         Atualiza análise diária usando busca EXATA tipo PROCV
         """
         cells_updated = 0
+        debug_info = []
         
         # Para cada horário da planilha (00:00 a 23:00)
         for hour in range(24):
@@ -381,6 +382,10 @@ class ExactWeatherProcessor:
                     # Nenhum dado dentro da tolerância - deixar vazio
                     continue
                 
+                # Debug para dia 24
+                if day == 24 and hour <= 10:
+                    debug_info.append(f"Dia {day}, Hora {hour:02d}:00 → Encontrado: {closest_timestamp}")
+                
                 # Obter dados do timestamp encontrado
                 data = month_timestamps[closest_timestamp]
                 
@@ -394,9 +399,21 @@ class ExactWeatherProcessor:
                         try:
                             ws[f'{col_letter}{row_num}'] = value
                             cells_updated += 1
-                        except Exception:
-                            # Falha ao escrever na célula - continuar
-                            pass
+                            
+                            # Debug adicional para dia 24
+                            if day == 24 and hour <= 10 and variable == 'Temperatura':
+                                debug_info.append(f"  → Escrevendo {value} em {col_letter}{row_num}")
+                                
+                        except Exception as e:
+                            # Log do erro se necessário, mas continua processamento
+                            if day == 24 and hour <= 10:
+                                debug_info.append(f"  → ERRO ao escrever em {col_letter}{row_num}: {e}")
+        
+        # Mostrar debug info se houver dados do dia 24
+        if debug_info:
+            st.markdown("### 🔍 Debug - Dia 24:")
+            for info in debug_info[:20]:  # Mostrar só os primeiros 20
+                st.text(info)
         
         return cells_updated
 
@@ -407,6 +424,10 @@ class ExactWeatherProcessor:
         if variable not in self.column_mapping:
             return None
         
+        # Verificar se o dia está no range válido (1-31)
+        if day_number < 1 or day_number > 31:
+            return None
+        
         start_col_num = self.column_mapping[variable]['start_num']
         target_col_num = start_col_num + (day_number - 1)
         
@@ -414,7 +435,13 @@ class ExactWeatherProcessor:
         if target_col_num > 187:  # Última coluna GE = 187
             return None
             
-        return get_column_letter(target_col_num)
+        col_letter = get_column_letter(target_col_num)
+        
+        # Debug para dia 24
+        if day_number == 24:
+            st.text(f"Debug coluna - {variable} Dia{day_number}: coluna {start_col_num} + {day_number-1} = {target_col_num} ({col_letter})")
+        
+        return col_letter
 
     def _show_file_processing_summary(self):
         """Mostra resumo detalhado do processamento"""
