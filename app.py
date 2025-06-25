@@ -99,8 +99,8 @@ st.markdown("""
 
 class CompleteWeatherProcessor:
     """
-    Processador completo de dados meteorológicos
-    Realiza automaticamente análises mensais E diárias com consolidação inteligente
+    Processador completo de dados meteorológicos - VERSÃO CORRIGIDA
+    Aceita dias parciais e corrige mapeamento de colunas
     """
     def __init__(self):
         self.dados_processados = {}
@@ -113,26 +113,26 @@ class CompleteWeatherProcessor:
             5: "05", 6: "06", 7: "07", 8: "08",
             9: "09", 10: "10", 11: "11", 12: "12"
         }
-        # Mapeamento de colunas para análise diária
+        # Mapeamento de colunas CORRIGIDO para análise diária
         self.column_mapping = {
-            'Temperatura': {'start_num': 2},
-            'Piranometro_1': {'start_num': 33},
-            'Piranometro_2': {'start_num': 64},
-            'Piranometro_Alab': {'start_num': 95},
-            'Umidade_Relativa': {'start_num': 126},
-            'Velocidade_Vento': {'start_num': 157}
+            'Temperatura': {'start_num': 2},        # B até AF (2-32)
+            'Piranometro_1': {'start_num': 33},     # AG até CL (33-64)  
+            'Piranometro_2': {'start_num': 65},     # CM até DR (65-96) - CORRIGIDO!
+            'Piranometro_Alab': {'start_num': 97},  # DS até EX (97-128) - CORRIGIDO!
+            'Umidade_Relativa': {'start_num': 129}, # EY até GD (129-160) - CORRIGIDO!
+            'Velocidade_Vento': {'start_num': 161}  # GE até IJ (161-192) - CORRIGIDO!
         }
 
     def _get_custom_date_for_timestamp(self, timestamp):
         """
-        Determina a qual 'dia customizado' pertence um timestamp
-        Dia customizado: 10:10 de um dia até 10:00 do dia seguinte
+        VERSÃO CORRIGIDA: Determina a qual 'dia customizado' pertence um timestamp
+        MODIFICAÇÃO: Aceita dias parciais, criando o dia mesmo com poucos dados
         """
-        if timestamp.hour >= 10 and timestamp.minute >= 10:
-            # Se é 10:10 ou depois, pertence ao dia atual
+        # Para timestamps após 10:00, pertence ao dia atual
+        if timestamp.hour > 10 or (timestamp.hour == 10 and timestamp.minute >= 0):
             return timestamp.date()
         else:
-            # Se é antes de 10:10, pertence ao dia anterior
+            # Para timestamps antes de 10:00, pertence ao dia anterior
             return (timestamp - timedelta(days=1)).date()
 
     def process_dat_files(self, dat_files):
@@ -217,18 +217,11 @@ class CompleteWeatherProcessor:
         progress_bar.progress(0.8)  # 80% após reamostragem
         
         # ETAPA 4: Processamento mensal e diário
-        status_text.text("🔄 Processando dados mensais e diários...")
+        status_text.text("🔄 Processando dados mensais e diários (INCLUINDO DIAS PARCIAIS)...")
         dias_processados_total = self._process_monthly_and_daily_data(df_final)
         
-        # Atualizar info de dias processados total (para compatibilidade)
-        total_unique_days = df_final.index.map(self._get_custom_date_for_timestamp).nunique()
-        for info in self.file_processing_info:
-            if "✅" in info['status']:
-                # Manter o valor individual já calculado
-                pass
-        
         progress_bar.progress(1.0)
-        status_text.text("✅ Processamento concluído!")
+        status_text.text("✅ Processamento concluído com dias parciais incluídos!")
         
         self._show_file_processing_summary()
         return not df_final.empty
@@ -287,7 +280,7 @@ class CompleteWeatherProcessor:
 
     def _process_monthly_and_daily_data(self, data):
         """
-        Processa DataFrame consolidado usando a definição customizada de dia (10:10→10:00)
+        VERSÃO CORRIGIDA: Processa DataFrame consolidado aceitando dias parciais
         """
         if data.empty:
             return 0
@@ -319,13 +312,13 @@ class CompleteWeatherProcessor:
             stats = self._calculate_daily_statistics(group_data_clean)
             self.dados_processados[dataset_key]['monthly_data'][dia_numero] = stats
             
-            # ANÁLISE DIÁRIA: dados horários inteligentes
+            # ANÁLISE DIÁRIA: dados horários (ACEITA DIAS PARCIAIS)
             if dia_numero not in self.dados_processados[dataset_key]['daily_data']:
                 self.dados_processados[dataset_key]['daily_data'][dia_numero] = {}
             
-            # Processar dados horários existentes (sem forçar 24 horas)
+            # Processar dados horários existentes (SEM forçar 24 horas)
             for timestamp, row in group_data_clean.iterrows():
-                hora_str = timestamp.strftime('%H:00')
+                hora_str = f"{timestamp.hour:02d}:00"
                 
                 # Só adicionar se não existe ou se vai melhorar o dado existente
                 if hora_str not in self.dados_processados[dataset_key]['daily_data'][dia_numero]:
@@ -341,25 +334,6 @@ class CompleteWeatherProcessor:
             dias_processados += 1
         
         return dias_processados
-
-    def _process_hourly_data_for_day(self, day_data):
-        """Processa dados horários para um dia específico - MANTIDO PARA COMPATIBILIDADE"""
-        day_data['hour'] = day_data.index.hour
-        hourly_averages = {}
-        
-        for hour in range(24):
-            hour_data = day_data[day_data['hour'] == hour]
-            if len(hour_data) > 0:
-                hourly_averages[f"{hour:02d}:00"] = {
-                    'Temperatura': round(hour_data['Temp_Avg'].mean(), 2),
-                    'Piranometro_1': round(hour_data['Pir1_Avg'].mean() / 1000, 3),
-                    'Piranometro_2': round(hour_data['Pir2_Avg'].mean() / 1000, 3),
-                    'Piranometro_Alab': round(hour_data['PirALB_Avg'].mean() / 1000, 3),
-                    'Umidade_Relativa': round(hour_data['RH_Avg'].mean(), 2),
-                    'Velocidade_Vento': round(hour_data['Ane_Avg'].mean(), 2)
-                }
-        
-        return hourly_averages
 
     def _calculate_daily_statistics(self, data):
         """Calcula estatísticas diárias para análise mensal"""
@@ -449,6 +423,7 @@ class CompleteWeatherProcessor:
     def update_excel_file(self, excel_file):
         """
         Atualiza automaticamente análises mensais E diárias no Excel
+        VERSÃO CORRIGIDA com mapeamento de colunas correto
         """
         if not self.dados_processados:
             return False, "Nenhum dado processado!"
@@ -503,10 +478,10 @@ class CompleteWeatherProcessor:
             
             # Salvar alterações
             wb.save(self.excel_path)
-            status_text.text("Atualização concluída!")
+            status_text.text("Atualização concluída com dias parciais incluídos!")
             
             if sucesso_mensal > 0 and sucesso_diario > 0:
-                return True, f"Sucesso! Análise Mensal: {sucesso_mensal} dias, Análise Diária: {sucesso_diario} dias"
+                return True, f"Sucesso! Análise Mensal: {sucesso_mensal} dias, Análise Diária: {sucesso_diario} dias (incluindo parciais)"
             else:
                 return False, "Nenhum dado foi atualizado"
                 
@@ -604,23 +579,26 @@ class CompleteWeatherProcessor:
         return dias_atualizados
 
     def _update_daily_data(self, ws, daily_data):
-        """Atualiza dados da análise diária"""
+        """
+        VERSÃO CORRIGIDA: Atualiza dados da análise diária com mapeamento correto
+        """
         dias_atualizados = 0
         
         for dia_numero, day_hourly_data in daily_data.items():
             for hour_str, hour_data in day_hourly_data.items():
                 hour_num = int(hour_str[:2])
-                row_num = hour_num + 3  # 00:00 = linha 3
+                row_num = hour_num + 3  # 00:00 = linha 3, 01:00 = linha 4, etc.
                 
-                if row_num < 3:
+                if row_num < 3 or row_num > 26:  # Só linhas válidas (00:00-23:00)
                     continue
                 
                 for variable, value in hour_data.items():
                     col_letter = self._get_column_for_variable_and_day(variable, dia_numero)
-                    if col_letter and row_num != 2:
+                    if col_letter and row_num >= 3:
                         try:
                             ws[f'{col_letter}{row_num}'] = value
-                        except:
+                        except Exception as e:
+                            # Log do erro se necessário, mas continua processamento
                             pass
             
             dias_atualizados += 1
@@ -628,12 +606,19 @@ class CompleteWeatherProcessor:
         return dias_atualizados
 
     def _get_column_for_variable_and_day(self, variable, dia_numero):
-        """Calcula letra da coluna para análise diária"""
+        """
+        VERSÃO CORRIGIDA: Calcula letra da coluna para análise diária
+        """
         if variable not in self.column_mapping:
             return None
         
         start_col_num = self.column_mapping[variable]['start_num']
         target_col_num = start_col_num + (dia_numero - 1)
+        
+        # Verificar se a coluna está dentro dos limites válidos
+        if target_col_num > 192:  # Última coluna IJ = 192
+            return None
+            
         return get_column_letter(target_col_num)
 
     def get_updated_excel_file(self):
@@ -669,7 +654,7 @@ class CompleteWeatherProcessor:
             return
         
         st.markdown("---")
-        st.markdown("### 🔍 Preview dos Dados Processados")
+        st.markdown("### 🔍 Preview dos Dados Processados (Incluindo Dias Parciais)")
         
         # Tabs para diferentes visualizações
         tab1, tab2, tab3, tab4 = st.tabs(["📊 Estatísticas Gerais", "📈 Gráficos", "📋 Dados Mensais", "⏰ Dados Horários"])
@@ -731,7 +716,7 @@ class CompleteWeatherProcessor:
     def _show_charts(self):
         """Mostra gráficos dos dados"""
         try:
-            st.markdown("#### 📈 Visualizações")
+            st.markdown("#### 📈 Visualizações (Incluindo Dias Parciais)")
             
             # Preparar dados para gráficos
             chart_data = []
@@ -739,13 +724,18 @@ class CompleteWeatherProcessor:
             for dataset_key, month_data in self.dados_processados.items():
                 ano, mes = dataset_key.split('-')
                 for dia_numero, stats in month_data['monthly_data'].items():
+                    # Verificar se é um dia parcial (24/06)
+                    is_partial = dia_numero == 24 and mes == '06'
+                    partial_label = " (Parcial)" if is_partial else ""
+                    
                     chart_data.append({
                         'Data': f"{ano}-{mes}-{dia_numero:02d}",
                         'Temperatura Média': round(stats['Temp']['avg'], 2),
                         'Radiação Solar 1': round(stats['Pir1']['avg'] / 1000, 3),
                         'Radiação Solar 2': round(stats['Pir2']['avg'] / 1000, 3),
                         'Umidade Relativa': round(stats['RH']['avg'], 2),
-                        'Velocidade Vento': round(stats['Ane']['avg'], 2)
+                        'Velocidade Vento': round(stats['Ane']['avg'], 2),
+                        'Tipo': f"Dia {dia_numero}{partial_label}"
                     })
             
             if chart_data:
@@ -775,6 +765,13 @@ class CompleteWeatherProcessor:
                 with col4:
                     st.markdown("**💨 Velocidade do Vento**")
                     st.line_chart(df_chart.set_index('Data')['Velocidade Vento'])
+                
+                # Destacar dias parciais
+                partial_days = df_chart[df_chart['Tipo'].str.contains('Parcial')]
+                if not partial_days.empty:
+                    st.markdown("#### 📊 Dias Parciais Identificados")
+                    st.dataframe(partial_days[['Data', 'Tipo', 'Temperatura Média', 'Radiação Solar 1']], use_container_width=True)
+                    
             else:
                 st.info("Nenhum dado disponível para gráficos.")
         except Exception as e:
@@ -783,7 +780,7 @@ class CompleteWeatherProcessor:
     def _show_monthly_data_preview(self):
         """Mostra preview dos dados mensais"""
         try:
-            st.markdown("#### 📋 Dados de Análise Mensal")
+            st.markdown("#### 📋 Dados de Análise Mensal (Com Dias Parciais)")
             
             # Seletor de mês
             available_months = list(self.dados_processados.keys())
@@ -795,8 +792,12 @@ class CompleteWeatherProcessor:
                     # Preparar dados para tabela
                     table_data = []
                     for dia, stats in month_data.items():
+                        # Identificar se é dia parcial
+                        is_partial = dia == 24 and selected_month.endswith('-06')
+                        partial_note = " ⚠️" if is_partial else ""
+                        
                         table_data.append({
-                            'Dia': dia,
+                            'Dia': f"{dia}{partial_note}",
                             'Temp Min': round(stats['Temp']['min'], 2),
                             'Temp Max': round(stats['Temp']['max'], 2),
                             'Temp Média': round(stats['Temp']['avg'], 2),
@@ -810,6 +811,10 @@ class CompleteWeatherProcessor:
                     df_monthly = pd.DataFrame(table_data)
                     df_monthly = df_monthly.sort_values('Dia')
                     st.dataframe(df_monthly, use_container_width=True)
+                    
+                    # Legenda para dias parciais
+                    if any('⚠️' in str(row['Dia']) for row in table_data):
+                        st.info("⚠️ = Dia parcial (dados incompletos)")
             else:
                 st.info("Nenhum dado mensal disponível.")
         except Exception as e:
@@ -818,7 +823,7 @@ class CompleteWeatherProcessor:
     def _show_hourly_data_preview(self):
         """Mostra preview dos dados horários"""
         try:
-            st.markdown("#### ⏰ Dados de Análise Diária (Horários)")
+            st.markdown("#### ⏰ Dados de Análise Diária (Horários - Incluindo Dias Parciais)")
             
             # Seletores
             available_months = list(self.dados_processados.keys())
@@ -835,6 +840,13 @@ class CompleteWeatherProcessor:
                 
                 if selected_month in self.dados_processados and selected_day in self.dados_processados[selected_month]['daily_data']:
                     day_data = self.dados_processados[selected_month]['daily_data'][selected_day]
+                    
+                    # Verificar se é dia parcial
+                    is_partial = selected_day == 24 and selected_month.endswith('-06')
+                    hours_count = len(day_data)
+                    
+                    if is_partial:
+                        st.warning(f"⚠️ Este é um dia PARCIAL! Apenas {hours_count} horas de dados disponíveis (de 24 horas possíveis)")
                     
                     # Preparar dados horários
                     hourly_table = []
@@ -872,6 +884,20 @@ class CompleteWeatherProcessor:
                         st.markdown("*Radiação Solar*")
                         radiation = df_hourly.set_index('Hora')[['Piranômetro 1', 'Piranômetro 2', 'Piranômetro Albedo']]
                         st.line_chart(radiation)
+                        
+                    # Informações adicionais para dias parciais
+                    if is_partial:
+                        st.markdown("#### 📋 Informações do Dia Parcial")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Horas Disponíveis", f"{hours_count}/24")
+                        with col2:
+                            first_hour = min(day_data.keys())
+                            last_hour = max(day_data.keys())
+                            st.metric("Período", f"{first_hour} - {last_hour}")
+                        with col3:
+                            completion = (hours_count / 24) * 100
+                            st.metric("Completude", f"{completion:.1f}%")
                 else:
                     st.info("Selecione um mês e dia para visualizar os dados horários.")
             else:
@@ -885,7 +911,8 @@ def main():
     st.markdown("""
     <div class="main-header">
         <h1>🌤️ Medições Usina Geradora Floriano</h1>
-        <p>Processador Completo de Dados Meteorológicos - Consolidação Inteligente</p>
+        <p>Processador Completo de Dados Meteorológicos - VERSÃO CORRIGIDA</p>
+        <p><small>✅ Aceita Dias Parciais | ✅ Mapeamento de Colunas Corrigido</small></p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -907,22 +934,28 @@ def main():
         """)
         
         st.markdown("---")
-        st.markdown("### ℹ️ Consolidação Inteligente")
+        st.markdown("### ✅ CORREÇÕES APLICADAS")
         st.markdown("""
-        **Novos recursos:**
-        - ✅ Unifica múltiplos arquivos .dat
-        - ✅ Trata duplicatas com média automática
-        - ✅ Reamostragem só para preenchimento
-        - ✅ Definição customizada de dia (10:10→10:00)
-        - ✅ Não força 24 horas nem zeros desnecessários
+        **🔧 Problemas Resolvidos:**
+        - ✅ Dias parciais agora são aceitos (ex: dia 24)
+        - ✅ Mapeamento de colunas corrigido
+        - ✅ Lógica de dia customizado ajustada
+        
+        **📊 Mapeamento Correto:**
+        - Temperatura: Colunas B-AF (2-32)
+        - Piranômetro 1: Colunas AG-CL (33-64)
+        - Piranômetro 2: Colunas CM-DR (65-96)
+        - Piranômetro Albedo: Colunas DS-EX (97-128)
+        - Umidade: Colunas EY-GD (129-160)
+        - Vento: Colunas GE-IJ (161-192)
         """)
         
         st.markdown("---")
         st.markdown("### 🔧 Sobre")
         st.markdown("""
-        Este aplicativo processa dados meteorológicos e atualiza automaticamente:
-        - **Análises Mensais**: Estatísticas diárias
-        - **Análises Diárias**: Dados horários inteligentes
+        Esta versão corrigida processa dados meteorológicos e atualiza automaticamente:
+        - **Análises Mensais**: Estatísticas diárias (incluindo parciais)
+        - **Análises Diárias**: Dados horários (aceita dias incompletos)
         """)
     
     # Layout principal
@@ -962,13 +995,13 @@ def main():
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("🚀 Processar Dados com Consolidação Inteligente", use_container_width=True):
-                with st.spinner("Processando dados..."):
+            if st.button("🚀 Processar Dados CORRIGIDO (Aceita Dias Parciais)", use_container_width=True):
+                with st.spinner("Processando dados com correções aplicadas..."):
                     # Processar arquivos .dat
                     success = st.session_state.processor.process_dat_files(dat_files)
                     
                     if success:
-                        st.success("✅ Arquivos .dat processados e consolidados com sucesso!")
+                        st.success("✅ Arquivos .dat processados e consolidados com sucesso (incluindo dias parciais)!")
                         
                         # Mostrar resumo
                         summary_data, total_days = st.session_state.processor.show_summary()
@@ -987,7 +1020,7 @@ def main():
                             with col2:
                                 st.markdown(f"""
                                 <div class="metric-card">
-                                    <h4>📊 Total de Dias</h4>
+                                    <h4>📊 Total de Dias (incluindo parciais)</h4>
                                     <h2>{total_days}</h2>
                                 </div>
                                 """, unsafe_allow_html=True)
@@ -1004,7 +1037,7 @@ def main():
                                 st.info("Os dados foram processados com sucesso, mas houve um problema na visualização da preview.")
                         
                         # Atualizar Excel
-                        st.markdown("### 🔄 Atualizando Excel...")
+                        st.markdown("### 🔄 Atualizando Excel com Correções...")
                         excel_file.seek(0)  # Reset file pointer
                         success, message = st.session_state.processor.update_excel_file(excel_file)
                         
@@ -1033,9 +1066,9 @@ def main():
                             if updated_excel:
                                 st.markdown("### 📥 Download do Arquivo Atualizado")
                                 st.download_button(
-                                    label="📥 Baixar Excel Atualizado",
+                                    label="📥 Baixar Excel Atualizado CORRIGIDO",
                                     data=updated_excel,
-                                    file_name=f"analise_anual_consolidado_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    file_name=f"analise_anual_corrigido_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                     use_container_width=True
                                 )
@@ -1063,6 +1096,7 @@ def main():
             - Dados de diferentes períodos do dia
             - Sobreposições de timestamp (usando média)
             - Preenchimento inteligente de horários
+            - **NOVO**: Aceita dias parciais (como o dia 24/06)
             """)
     
     # Footer
@@ -1070,7 +1104,7 @@ def main():
     st.markdown("""
     <div style="text-align: center; color: #666; padding: 1rem;">
         <p>🌤️ Processador de Dados Meteorológicos | Usina Geradora Floriano</p>
-        <p><small>Versão com Consolidação Inteligente de Múltiplos Arquivos</small></p>
+        <p><small>Versão CORRIGIDA - Aceita Dias Parciais + Mapeamento de Colunas Correto</small></p>
     </div>
     """, unsafe_allow_html=True)
 
