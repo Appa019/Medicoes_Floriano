@@ -577,13 +577,16 @@ class ExactWeatherProcessor:
         return None
 
     def _process_monthly_analysis(self, wb, monthly_data):
-        """Processa todas as abas de análise mensal"""
+        """Processa todas as abas de análise mensal - VERSÃO CORRIGIDA"""
         monthly_sheets_updated = 0
         monthly_cells_updated = 0
         
         print(f"🔍 DEBUG: Iniciando análise mensal...")
         print(f"🔍 DEBUG: Meses disponíveis: {list(monthly_data.keys())}")
         print(f"🔍 DEBUG: Abas no Excel: {wb.sheetnames}")
+        
+        # Debug do mapeamento de colunas
+        self._debug_column_mapping()
         
         for year_month, month_timestamps in monthly_data.items():
             year, month = year_month.split('-')
@@ -592,6 +595,9 @@ class ExactWeatherProcessor:
             print(f"🔍 DEBUG: Processando {year_month} (mês {month_num})")
             print(f"🔍 DEBUG: Timestamps disponíveis: {len(month_timestamps)}")
             
+            # Verificar variáveis disponíveis
+            common_vars = self._verify_data_variables(month_timestamps)
+            
             # Buscar aba mensal correspondente
             monthly_sheet_name = self._find_monthly_analysis_sheet(wb.sheetnames, month_num)
             print(f"🔍 DEBUG: Aba encontrada: {monthly_sheet_name}")
@@ -599,9 +605,10 @@ class ExactWeatherProcessor:
             if monthly_sheet_name:
                 ws_monthly = wb[monthly_sheet_name]
                 
-                # TESTE: Verificar se as variáveis existem nos dados
-                sample_data = next(iter(month_timestamps.values()))
-                print(f"🔍 DEBUG: Variáveis disponíveis: {list(sample_data.keys())}")
+                print(f"🔍 DEBUG: Iniciando processamento da aba {monthly_sheet_name}")
+                
+                # Debug adicional: verificar algumas células da planilha
+                self._debug_worksheet_structure(ws_monthly)
                 
                 cells_updated = self._update_monthly_analysis_data(ws_monthly, month_timestamps, int(year), month_num)
                 print(f"🔍 DEBUG: Células atualizadas na aba mensal: {cells_updated}")
@@ -613,15 +620,34 @@ class ExactWeatherProcessor:
             else:
                 print(f"❌ DEBUG: Nenhuma aba mensal encontrada para mês {month_num}")
                 print(f"❌ DEBUG: Procurando por: '{month_num:02d}-Analise Mensal'")
+                
+                # Mostrar abas similares para debug
+                similar_sheets = [s for s in wb.sheetnames if str(month_num).zfill(2) in s and 'Mensal' in s]
+                if similar_sheets:
+                    print(f"❌ DEBUG: Abas similares encontradas: {similar_sheets}")
         
         print(f"🔍 DEBUG: RESULTADO FINAL - Abas mensais: {monthly_sheets_updated}, Células: {monthly_cells_updated}")
         return monthly_sheets_updated, monthly_cells_updated
 
     def _update_monthly_analysis_data(self, ws, month_timestamps, year, month):
-        """Atualiza análise mensal com estatísticas diárias"""
+        """Atualiza análise mensal com estatísticas diárias - VERSÃO CORRIGIDA"""
         cells_updated = 0
         
         print(f"🔍 DEBUG: Iniciando update da aba mensal para {month}/{year}")
+        print(f"🔍 DEBUG: Total de timestamps disponíveis: {len(month_timestamps)}")
+        
+        # Verificar quais variáveis temos nos dados
+        if not month_timestamps:
+            print("❌ DEBUG: Nenhum timestamp disponível")
+            return 0
+            
+        sample_data = next(iter(month_timestamps.values()))
+        available_variables = list(sample_data.keys())
+        print(f"🔍 DEBUG: Variáveis disponíveis nos dados: {available_variables}")
+        
+        # Verificar quais variáveis estão no mapeamento
+        mapped_variables = list(self.monthly_column_mapping.keys())
+        print(f"🔍 DEBUG: Variáveis no mapeamento: {mapped_variables}")
         
         # Para cada dia do mês (1 a 31)
         for day in range(1, 32):
@@ -631,9 +657,6 @@ class ExactWeatherProcessor:
             except ValueError:
                 # Dia inválido para o mês (ex: 31 de fevereiro)
                 continue
-            
-            # Linha correspondente ao dia (dia 1 = linha 3, dia 2 = linha 4, etc.)
-            row_num = day + 2  # dia 1 na linha 3
             
             # Filtrar todos os timestamps do dia
             day_timestamps = [ts for ts in month_timestamps.keys() if ts.day == day]
@@ -646,7 +669,13 @@ class ExactWeatherProcessor:
             
             # Processar cada variável
             variables_processed = 0
+            
             for variable in self.monthly_column_mapping.keys():
+                # Verificar se a variável existe nos dados
+                if variable not in available_variables:
+                    print(f"⚠️  DEBUG: Variável {variable} não encontrada nos dados disponíveis")
+                    continue
+                
                 # Coletar todos os valores do dia para esta variável
                 day_values = []
                 for ts in day_timestamps:
@@ -675,8 +704,15 @@ class ExactWeatherProcessor:
                 start_col = col_info['start_col']
                 start_row, end_row = col_info['rows']
                 
-                # Verificar se estamos no range correto de linhas
-                if not (start_row <= row_num <= end_row):
+                # CORREÇÃO PRINCIPAL: Determinar qual linha usar baseado na seção da variável
+                if start_row <= 33:  # Primeira seção (linhas 3-33)
+                    target_row = day + 2  # dia 1 = linha 3, dia 2 = linha 4, etc.
+                else:  # Segunda seção (linhas 37-67)
+                    target_row = day + 36  # dia 1 = linha 37, dia 2 = linha 38, etc.
+                
+                # Verificar se estamos no range correto de linhas para esta variável
+                if not (start_row <= target_row <= end_row):
+                    print(f"❌ DEBUG: {variable} dia {day} - linha {target_row} fora do range {start_row}-{end_row}")
                     continue
                 
                 # Calcular letras das colunas (Min, Max, Avg, Outliers)
@@ -690,20 +726,97 @@ class ExactWeatherProcessor:
                 
                 # Preencher células (usar ponto decimal, não vírgula)
                 try:
-                    ws[f'{min_col}{row_num}'] = round(min_val, 3)
-                    ws[f'{max_col}{row_num}'] = round(max_val, 3)
-                    ws[f'{avg_col}{row_num}'] = round(avg_val, 3)
-                    ws[f'{out_col}{row_num}'] = int(outliers_count)
+                    ws[f'{min_col}{target_row}'] = round(min_val, 3)
+                    ws[f'{max_col}{target_row}'] = round(max_val, 3)
+                    ws[f'{avg_col}{target_row}'] = round(avg_val, 3)
+                    ws[f'{out_col}{target_row}'] = int(outliers_count)
                     cells_updated += 4
-                    print(f"✅ DEBUG: {variable} dia {day} - Min: {min_val:.3f}, Max: {max_val:.3f}, Avg: {avg_val:.3f}, Out: {outliers_count}")
+                    print(f"✅ DEBUG: {variable} dia {day} - Min: {min_val:.3f}, Max: {max_val:.3f}, Avg: {avg_val:.3f}, Out: {outliers_count} (linha {target_row})")
                 except Exception as e:
-                    print(f"❌ DEBUG: Erro ao preencher {variable} dia {day}: {e}")
+                    print(f"❌ DEBUG: Erro ao preencher {variable} dia {day} na linha {target_row}: {e}")
+                    # Debug adicional - mostrar detalhes do erro
+                    print(f"❌ DEBUG: Tentando escrever em {min_col}{target_row}, {max_col}{target_row}, {avg_col}{target_row}, {out_col}{target_row}")
                     pass
             
             print(f"🔍 DEBUG: Dia {day} - {variables_processed} variáveis processadas")
         
         print(f"🔍 DEBUG: Total de células atualizadas na análise mensal: {cells_updated}")
         return cells_updated
+
+    def _debug_worksheet_structure(self, ws):
+        """Debug da estrutura da planilha para entender o layout"""
+        print(f"🔍 DEBUG: Analisando estrutura da aba {ws.title}")
+        
+        # Verificar algumas células chave
+        test_cells = ['B3', 'B37', 'H37', 'N37', 'T37']
+        
+        for cell in test_cells:
+            try:
+                value = ws[cell].value
+                print(f"  Célula {cell}: '{value}'")
+            except Exception as e:
+                print(f"  Célula {cell}: ERRO - {e}")
+        
+        # Verificar dimensões da planilha
+        try:
+            max_row = ws.max_row
+            max_col = ws.max_column
+            print(f"  Dimensões: {max_row} linhas x {max_col} colunas")
+        except Exception as e:
+            print(f"  Erro ao obter dimensões: {e}")
+
+    def _debug_column_mapping(self):
+        """Debug detalhado do mapeamento de colunas"""
+        print("🔍 DEBUG: Verificando mapeamento de colunas mensais:")
+        
+        for variable, mapping in self.monthly_column_mapping.items():
+            start_col = mapping['start_col']
+            start_row, end_row = mapping['rows']
+            
+            from openpyxl.utils import column_index_from_string
+            start_col_num = column_index_from_string(start_col)
+            
+            min_col = get_column_letter(start_col_num)
+            max_col = get_column_letter(start_col_num + 1)
+            avg_col = get_column_letter(start_col_num + 2)
+            out_col = get_column_letter(start_col_num + 3)
+            
+            section = "PRIMEIRA" if start_row <= 33 else "SEGUNDA"
+            
+            print(f"  {variable}:")
+            print(f"    Seção: {section}")
+            print(f"    Linhas: {start_row} a {end_row}")
+            print(f"    Colunas: {min_col}(Min) {max_col}(Max) {avg_col}(Avg) {out_col}(Out)")
+            print(f"    Exemplo dia 1: linha {start_row if start_row <= 33 else 37}")
+            print("")
+
+    def _verify_data_variables(self, month_timestamps):
+        """Verifica quais variáveis estão disponíveis nos dados"""
+        if not month_timestamps:
+            print("❌ DEBUG: Nenhum timestamp disponível")
+            return []
+        
+        sample_data = next(iter(month_timestamps.values()))
+        available_vars = list(sample_data.keys())
+        mapped_vars = list(self.monthly_column_mapping.keys())
+        
+        print("🔍 DEBUG: Verificação de variáveis:")
+        print(f"  Variáveis nos dados: {available_vars}")
+        print(f"  Variáveis mapeadas: {mapped_vars}")
+        
+        missing_in_data = [var for var in mapped_vars if var not in available_vars]
+        missing_in_mapping = [var for var in available_vars if var not in mapped_vars]
+        
+        if missing_in_data:
+            print(f"  ❌ Variáveis mapeadas mas ausentes nos dados: {missing_in_data}")
+        
+        if missing_in_mapping:
+            print(f"  ⚠️  Variáveis nos dados mas não mapeadas: {missing_in_mapping}")
+        
+        common_vars = [var for var in mapped_vars if var in available_vars]
+        print(f"  ✅ Variáveis comuns (serão processadas): {common_vars}")
+        
+        return common_vars
 
     def _calculate_outliers(self, values):
         """Calcula número de outliers usando a fórmula padrão"""
