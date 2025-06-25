@@ -495,7 +495,7 @@ class ExactWeatherProcessor:
 
     def _update_daily_analysis_exact(self, ws, month_timestamps, year, month):
         """
-        Atualiza análise diária usando busca 
+        Atualiza análise diária usando busca exata
         """
         cells_updated = 0
         
@@ -581,26 +581,47 @@ class ExactWeatherProcessor:
         monthly_sheets_updated = 0
         monthly_cells_updated = 0
         
+        print(f"🔍 DEBUG: Iniciando análise mensal...")
+        print(f"🔍 DEBUG: Meses disponíveis: {list(monthly_data.keys())}")
+        print(f"🔍 DEBUG: Abas no Excel: {wb.sheetnames}")
+        
         for year_month, month_timestamps in monthly_data.items():
             year, month = year_month.split('-')
             month_num = int(month)
             
+            print(f"🔍 DEBUG: Processando {year_month} (mês {month_num})")
+            print(f"🔍 DEBUG: Timestamps disponíveis: {len(month_timestamps)}")
+            
             # Buscar aba mensal correspondente
             monthly_sheet_name = self._find_monthly_analysis_sheet(wb.sheetnames, month_num)
+            print(f"🔍 DEBUG: Aba encontrada: {monthly_sheet_name}")
+            
             if monthly_sheet_name:
                 ws_monthly = wb[monthly_sheet_name]
+                
+                # TESTE: Verificar se as variáveis existem nos dados
+                sample_data = next(iter(month_timestamps.values()))
+                print(f"🔍 DEBUG: Variáveis disponíveis: {list(sample_data.keys())}")
+                
                 cells_updated = self._update_monthly_analysis_data(ws_monthly, month_timestamps, int(year), month_num)
+                print(f"🔍 DEBUG: Células atualizadas na aba mensal: {cells_updated}")
                 
                 if cells_updated > 0:
                     monthly_sheets_updated += 1
                     monthly_cells_updated += cells_updated
                     self.processed_sheets.append(f"{monthly_sheet_name} (Mensal)")
+            else:
+                print(f"❌ DEBUG: Nenhuma aba mensal encontrada para mês {month_num}")
+                print(f"❌ DEBUG: Procurando por: '{month_num:02d}-Analise Mensal'")
         
+        print(f"🔍 DEBUG: RESULTADO FINAL - Abas mensais: {monthly_sheets_updated}, Células: {monthly_cells_updated}")
         return monthly_sheets_updated, monthly_cells_updated
 
     def _update_monthly_analysis_data(self, ws, month_timestamps, year, month):
         """Atualiza análise mensal com estatísticas diárias"""
         cells_updated = 0
+        
+        print(f"🔍 DEBUG: Iniciando update da aba mensal para {month}/{year}")
         
         # Para cada dia do mês (1 a 31)
         for day in range(1, 32):
@@ -621,7 +642,10 @@ class ExactWeatherProcessor:
                 # Não há dados para este dia - deixar células vazias
                 continue
             
+            print(f"🔍 DEBUG: Dia {day} - {len(day_timestamps)} timestamps encontrados")
+            
             # Processar cada variável
+            variables_processed = 0
             for variable in self.monthly_column_mapping.keys():
                 # Coletar todos os valores do dia para esta variável
                 day_values = []
@@ -632,7 +656,11 @@ class ExactWeatherProcessor:
                 
                 if not day_values:
                     # Não há dados válidos para esta variável neste dia
+                    print(f"⚠️  DEBUG: Variável {variable} - nenhum valor válido no dia {day}")
                     continue
+                
+                print(f"✅ DEBUG: Variável {variable} - {len(day_values)} valores no dia {day}")
+                variables_processed += 1
                 
                 # Calcular estatísticas
                 min_val = min(day_values)
@@ -660,475 +688,481 @@ class ExactWeatherProcessor:
                 avg_col = get_column_letter(start_col_num + 2)  # Coluna Avg
                 out_col = get_column_letter(start_col_num + 3)  # Coluna Outliers
                 
-                # Preencher células com formatação (vírgula como separador)
+                # Preencher células (usar ponto decimal, não vírgula)
                 try:
-                    ws[f'{min_col}{row_num}'] = f"{min_val:.3f}".replace('.', ',')
-                    ws[f'{max_col}{row_num}'] = f"{max_val:.3f}".replace('.', ',')
-                    ws[f'{avg_col}{row_num}'] = f"{avg_val:.3f}".replace('.', ',')
+                    ws[f'{min_col}{row_num}'] = round(min_val, 3)
+                    ws[f'{max_col}{row_num}'] = round(max_val, 3)
+                    ws[f'{avg_col}{row_num}'] = round(avg_val, 3)
                     ws[f'{out_col}{row_num}'] = int(outliers_count)
                     cells_updated += 4
-                except Exception:
-                    # Continua processamento mesmo com erro
+                    print(f"✅ DEBUG: {variable} dia {day} - Min: {min_val:.3f}, Max: {max_val:.3f}, Avg: {avg_val:.3f}, Out: {outliers_count}")
+                except Exception as e:
+                    print(f"❌ DEBUG: Erro ao preencher {variable} dia {day}: {e}")
                     pass
+            
+            print(f"🔍 DEBUG: Dia {day} - {variables_processed} variáveis processadas")
         
+        print(f"🔍 DEBUG: Total de células atualizadas na análise mensal: {cells_updated}")
         return cells_updated
-def _calculate_outliers(self, values):
-       """Calcula número de outliers usando a fórmula padrão"""
-       if len(values) < 2:
-           return 0
-       
-       try:
-           # Calcular quartis e IQR
-           q1 = np.percentile(values, 25)
-           q3 = np.percentile(values, 75)
-           iqr = q3 - q1
-           
-           # Calcular média
-           mean_val = np.mean(values)
-           
-           # Calcular limites
-           l_sup = mean_val + 1.5 * iqr
-           l_inf = mean_val - 1.5 * iqr
-           
-           # Contar outliers
-           outliers = np.sum((np.array(values) < l_inf) | (np.array(values) > l_sup))
-           
-           return int(outliers)
-       except Exception:
-           return 0
 
-   def _show_file_processing_summary(self):
-       """Mostra resumo detalhado do processamento"""
-       if hasattr(self, 'file_processing_info') and self.file_processing_info:
-           st.markdown("---")
-           st.markdown("### Resumo do Processamento")
-           
-           # Criar DataFrame com as informações
-           df_files = pd.DataFrame(self.file_processing_info)
-           
-           # Calcular totais
-           total_records = df_files['registros'].sum()
-           total_files_success = len([f for f in self.file_processing_info if 'sucesso' in f['status'].lower()])
-           total_timestamps = len(self.consolidated_data)
-           
-           # Mostrar métricas gerais
-           col1, col2, col3, col4 = st.columns(4)
-           with col1:
-               st.markdown(f"""
-               <div class="metric-card">
-                   <h4>Arquivos Processados</h4>
-                   <h2>{total_files_success}</h2>
-               </div>
-               """, unsafe_allow_html=True)
-           
-           with col2:
-               st.markdown(f"""
-               <div class="metric-card">
-                   <h4>Registros Lidos</h4>
-                   <h2>{total_records:,}</h2>
-               </div>
-               """, unsafe_allow_html=True)
-           
-           with col3:
-               st.markdown(f"""
-               <div class="metric-card">
-                   <h4>Timestamps Únicos</h4>
-                   <h2>{total_timestamps:,}</h2>
-               </div>
-               """, unsafe_allow_html=True)
-           
-           with col4:
-               st.markdown(f"""
-               <div class="metric-card">
-                   <h4>Conflitos Detectados</h4>
-                   <h2>{len(self.conflicts_detected)}</h2>
-               </div>
-               """, unsafe_allow_html=True)
-           
-           # Tabela detalhada
-           st.markdown("#### Detalhes por Arquivo")
-           df_display = df_files.copy()
-           df_display.columns = ['Arquivo', 'Registros', 'Início', 'Fim', 'Status']
-           df_display['Registros'] = df_display['Registros'].apply(lambda x: f"{x:,}" if x > 0 else "0")
-           
-           st.dataframe(df_display, use_container_width=True)
+    def _calculate_outliers(self, values):
+        """Calcula número de outliers usando a fórmula padrão"""
+        if len(values) < 2:
+            return 0
+        
+        try:
+            # Calcular quartis e IQR
+            q1 = np.percentile(values, 25)
+            q3 = np.percentile(values, 75)
+            iqr = q3 - q1
+            
+            # Calcular média
+            mean_val = np.mean(values)
+            
+            # Calcular limites
+            l_sup = mean_val + 1.5 * iqr
+            l_inf = mean_val - 1.5 * iqr
+            
+            # Contar outliers
+            outliers = np.sum((np.array(values) < l_inf) | (np.array(values) > l_sup))
+            
+            return int(outliers)
+        except Exception as e:
+            print(f"❌ Erro no cálculo de outliers: {e}")
+            return 0
 
-   def get_updated_excel_file(self):
-       """Retorna o arquivo Excel atualizado"""
-       if self.excel_path and os.path.exists(self.excel_path):
-           with open(self.excel_path, 'rb') as f:
-               return f.read()
-       return None
+    def _show_file_processing_summary(self):
+        """Mostra resumo detalhado do processamento"""
+        if hasattr(self, 'file_processing_info') and self.file_processing_info:
+            st.markdown("---")
+            st.markdown("### Resumo do Processamento")
+            
+            # Criar DataFrame com as informações
+            df_files = pd.DataFrame(self.file_processing_info)
+            
+            # Calcular totais
+            total_records = df_files['registros'].sum()
+            total_files_success = len([f for f in self.file_processing_info if 'sucesso' in f['status'].lower()])
+            total_timestamps = len(self.consolidated_data)
+            
+            # Mostrar métricas gerais
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>Arquivos Processados</h4>
+                    <h2>{total_files_success}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>Registros Lidos</h4>
+                    <h2>{total_records:,}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>Timestamps Únicos</h4>
+                    <h2>{total_timestamps:,}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col4:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h4>Conflitos Detectados</h4>
+                    <h2>{len(self.conflicts_detected)}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Tabela detalhada
+            st.markdown("#### Detalhes por Arquivo")
+            df_display = df_files.copy()
+            df_display.columns = ['Arquivo', 'Registros', 'Início', 'Fim', 'Status']
+            df_display['Registros'] = df_display['Registros'].apply(lambda x: f"{x:,}" if x > 0 else "0")
+            
+            st.dataframe(df_display, use_container_width=True)
 
-   def show_data_preview_and_charts(self):
-       """Mostra preview dos dados consolidados com gráficos para conferência"""
-       if not self.consolidated_data:
-           return
-       
-       st.markdown("---")
-       st.markdown("### Análise dos Dados Consolidados")
-       
-       # Converter para DataFrame para visualização
-       preview_data = []
-       for timestamp, data in self.consolidated_data.items():
-           row = {'Timestamp': timestamp}
-           row.update(data)
-           preview_data.append(row)
-       
-       if preview_data:
-           df_preview = pd.DataFrame(preview_data)
-           df_preview = df_preview.sort_values('Timestamp')
-           
-           # Estatísticas gerais
-           st.markdown("#### Estatísticas Gerais")
-           col1, col2, col3 = st.columns(3)
-           
-           with col1:
-               first_timestamp = min(self.consolidated_data.keys())
-               last_timestamp = max(self.consolidated_data.keys())
-               period_days = (last_timestamp - first_timestamp).days + 1
-               st.metric("Período Total", f"{period_days} dias")
-           
-           with col2:
-               timestamps_per_day = len(self.consolidated_data) / period_days if period_days > 0 else 0
-               st.metric("Registros/Dia", f"{timestamps_per_day:.1f}")
-           
-           with col3:
-               # Agrupar por mês
-               months = set()
-               for ts in self.consolidated_data.keys():
-                   months.add(f"{ts.year}-{ts.month:02d}")
-               st.metric("Meses Cobertos", len(months))
-           
-           # Gráficos para conferência das variáveis
-           self._create_variable_charts(df_preview)
-           
-           # Preview da tabela de dados
-           st.markdown("#### Preview dos Dados (Primeiros 100 registros)")
-           st.dataframe(df_preview.head(100), use_container_width=True)
-           
-       else:
-           st.info("Nenhum dado disponível para preview.")
+    def get_updated_excel_file(self):
+        """Retorna o arquivo Excel atualizado"""
+        if self.excel_path and os.path.exists(self.excel_path):
+            with open(self.excel_path, 'rb') as f:
+                return f.read()
+        return None
 
-   def _create_variable_charts(self, df):
-       """Cria gráficos para conferência das variáveis meteorológicas"""
-       st.markdown("#### Gráficos de Conferência das Variáveis")
-       
-       # Preparar dados para gráficos
-       df_clean = df.dropna()
-       
-       if len(df_clean) == 0:
-           st.warning("Não há dados suficientes para gerar gráficos.")
-           return
-       
-       # Gráfico 1: Temperatura ao longo do tempo
-       with st.container():
-           st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-           st.markdown("**Temperatura (°C)**")
-           
-           fig_temp = px.line(df_clean, x='Timestamp', y='Temperatura',
-                             title='Variação da Temperatura ao Longo do Tempo',
-                             color_discrete_sequence=['#00529C'])
-           fig_temp.update_layout(
-               xaxis_title="Data/Hora",
-               yaxis_title="Temperatura (°C)",
-               height=400,
-               showlegend=False
-           )
-           st.plotly_chart(fig_temp, use_container_width=True)
-           st.markdown('</div>', unsafe_allow_html=True)
-       
-       # Gráfico 2: Piranômetros (Radiação Solar)
-       with st.container():
-           st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-           st.markdown("**Radiação Solar (kW/m²)**")
-           
-           fig_pir = go.Figure()
-           
-           if 'Piranometro_1' in df_clean.columns:
-               fig_pir.add_trace(go.Scatter(x=df_clean['Timestamp'], y=df_clean['Piranometro_1'],
-                                          mode='lines', name='Piranômetro 1', line=dict(color='#FF6B35')))
-           
-           if 'Piranometro_2' in df_clean.columns:
-               fig_pir.add_trace(go.Scatter(x=df_clean['Timestamp'], y=df_clean['Piranometro_2'],
-                                          mode='lines', name='Piranômetro 2', line=dict(color='#F7931E')))
-           
-           if 'Piranometro_Alab' in df_clean.columns:
-               fig_pir.add_trace(go.Scatter(x=df_clean['Timestamp'], y=df_clean['Piranometro_Alab'],
-                                          mode='lines', name='Piranômetro Albedo', line=dict(color='#FFD23F')))
-           
-           fig_pir.update_layout(
-               title='Radiação Solar - Comparação dos Piranômetros',
-               xaxis_title="Data/Hora",
-               yaxis_title="Radiação Solar (kW/m²)",
-               height=400,
-               legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-           )
-           st.plotly_chart(fig_pir, use_container_width=True)
-           st.markdown('</div>', unsafe_allow_html=True)
-       
-       # Gráfico 3: Umidade e Velocidade do Vento
-       with st.container():
-           st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-           st.markdown("**Umidade Relativa e Velocidade do Vento**")
-           
-           # Criar subplots com eixos Y duplos
-           fig_combined = make_subplots(specs=[[{"secondary_y": True}]])
-           
-           if 'Umidade_Relativa' in df_clean.columns:
-               fig_combined.add_trace(
-                   go.Scatter(x=df_clean['Timestamp'], y=df_clean['Umidade_Relativa'],
-                            mode='lines', name='Umidade Relativa (%)', line=dict(color='#4A90E2')),
-                   secondary_y=False,
-               )
-           
-           if 'Velocidade_Vento' in df_clean.columns:
-               fig_combined.add_trace(
-                   go.Scatter(x=df_clean['Timestamp'], y=df_clean['Velocidade_Vento'],
-                            mode='lines', name='Velocidade do Vento (m/s)', line=dict(color='#50C878')),
-                   secondary_y=True,
-               )
-           
-           # Configurar eixos Y
-           fig_combined.update_xaxes(title_text="Data/Hora")
-           fig_combined.update_yaxes(title_text="Umidade Relativa (%)", secondary_y=False)
-           fig_combined.update_yaxes(title_text="Velocidade do Vento (m/s)", secondary_y=True)
-           
-           fig_combined.update_layout(
-               title='Umidade Relativa e Velocidade do Vento',
-               height=400,
-               legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-           )
-           st.plotly_chart(fig_combined, use_container_width=True)
-           st.markdown('</div>', unsafe_allow_html=True)
-       
-       # Estatísticas descritivas
-       st.markdown("#### Estatísticas Descritivas")
-       
-       # Selecionar apenas colunas numéricas
-       numeric_cols = ['Temperatura', 'Piranometro_1', 'Piranometro_2', 'Piranometro_Alab', 'Umidade_Relativa', 'Velocidade_Vento']
-       available_cols = [col for col in numeric_cols if col in df_clean.columns]
-       
-       if available_cols:
-           stats_df = df_clean[available_cols].describe().round(3)
-           stats_df.index = ['Contagem', 'Média', 'Desvio Padrão', 'Mínimo', '25%', '50% (Mediana)', '75%', 'Máximo']
-           
-           st.markdown('<div class="stats-container">', unsafe_allow_html=True)
-           st.dataframe(stats_df, use_container_width=True)
-           st.markdown('</div>', unsafe_allow_html=True)
-       
-       # Distribuição dos dados por hora do dia
-       st.markdown("#### Distribuição por Hora do Dia")
-       
-       if len(df_clean) > 0:
-           df_clean['Hora'] = df_clean['Timestamp'].dt.hour
-           
-           # Gráfico de distribuição por hora
-           hourly_stats = df_clean.groupby('Hora')[available_cols].mean().reset_index()
-           
-           fig_hourly = go.Figure()
-           
-           colors = ['#00529C', '#FF6B35', '#F7931E', '#FFD23F', '#4A90E2', '#50C878']
-           
-           for i, col in enumerate(available_cols):
-               if col in hourly_stats.columns:
-                   fig_hourly.add_trace(go.Scatter(
-                       x=hourly_stats['Hora'], 
-                       y=hourly_stats[col],
-                       mode='lines+markers',
-                       name=col.replace('_', ' ').title(),
-                       line=dict(color=colors[i % len(colors)])
-                   ))
-           
-           fig_hourly.update_layout(
-               title='Valores Médios por Hora do Dia',
-               xaxis_title="Hora do Dia",
-               yaxis_title="Valores Médios",
-               height=400,
-               legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-           )
-           
-           st.plotly_chart(fig_hourly, use_container_width=True)
+    def show_data_preview_and_charts(self):
+        """Mostra preview dos dados consolidados com gráficos para conferência"""
+        if not self.consolidated_data:
+            return
+        
+        st.markdown("---")
+        st.markdown("### Análise dos Dados Consolidados")
+        
+        # Converter para DataFrame para visualização
+        preview_data = []
+        for timestamp, data in self.consolidated_data.items():
+            row = {'Timestamp': timestamp}
+            row.update(data)
+            preview_data.append(row)
+        
+        if preview_data:
+            df_preview = pd.DataFrame(preview_data)
+            df_preview = df_preview.sort_values('Timestamp')
+            
+            # Estatísticas gerais
+            st.markdown("#### Estatísticas Gerais")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                first_timestamp = min(self.consolidated_data.keys())
+                last_timestamp = max(self.consolidated_data.keys())
+                period_days = (last_timestamp - first_timestamp).days + 1
+                st.metric("Período Total", f"{period_days} dias")
+            
+            with col2:
+                timestamps_per_day = len(self.consolidated_data) / period_days if period_days > 0 else 0
+                st.metric("Registros/Dia", f"{timestamps_per_day:.1f}")
+            
+            with col3:
+                # Agrupar por mês
+                months = set()
+                for ts in self.consolidated_data.keys():
+                    months.add(f"{ts.year}-{ts.month:02d}")
+                st.metric("Meses Cobertos", len(months))
+            
+            # Gráficos para conferência das variáveis
+            self._create_variable_charts(df_preview)
+            
+            # Preview da tabela de dados
+            st.markdown("#### Preview dos Dados (Primeiros 100 registros)")
+            st.dataframe(df_preview.head(100), use_container_width=True)
+            
+        else:
+            st.info("Nenhum dado disponível para preview.")
+
+    def _create_variable_charts(self, df):
+        """Cria gráficos para conferência das variáveis meteorológicas"""
+        st.markdown("#### Gráficos de Conferência das Variáveis")
+        
+        # Preparar dados para gráficos
+        df_clean = df.dropna()
+        
+        if len(df_clean) == 0:
+            st.warning("Não há dados suficientes para gerar gráficos.")
+            return
+        
+        # Gráfico 1: Temperatura ao longo do tempo
+        with st.container():
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown("**Temperatura (°C)**")
+            
+            fig_temp = px.line(df_clean, x='Timestamp', y='Temperatura',
+                              title='Variação da Temperatura ao Longo do Tempo',
+                              color_discrete_sequence=['#00529C'])
+            fig_temp.update_layout(
+                xaxis_title="Data/Hora",
+                yaxis_title="Temperatura (°C)",
+                height=400,
+                showlegend=False
+            )
+            st.plotly_chart(fig_temp, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Gráfico 2: Piranômetros (Radiação Solar)
+        with st.container():
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown("**Radiação Solar (kW/m²)**")
+            
+            fig_pir = go.Figure()
+            
+            if 'Piranometro_1' in df_clean.columns:
+                fig_pir.add_trace(go.Scatter(x=df_clean['Timestamp'], y=df_clean['Piranometro_1'],
+                                           mode='lines', name='Piranômetro 1', line=dict(color='#FF6B35')))
+            
+            if 'Piranometro_2' in df_clean.columns:
+                fig_pir.add_trace(go.Scatter(x=df_clean['Timestamp'], y=df_clean['Piranometro_2'],
+                                           mode='lines', name='Piranômetro 2', line=dict(color='#F7931E')))
+            
+            if 'Piranometro_Alab' in df_clean.columns:
+                fig_pir.add_trace(go.Scatter(x=df_clean['Timestamp'], y=df_clean['Piranometro_Alab'],
+                                           mode='lines', name='Piranômetro Albedo', line=dict(color='#FFD23F')))
+            
+            fig_pir.update_layout(
+                title='Radiação Solar - Comparação dos Piranômetros',
+                xaxis_title="Data/Hora",
+                yaxis_title="Radiação Solar (kW/m²)",
+                height=400,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_pir, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Gráfico 3: Umidade e Velocidade do Vento
+        with st.container():
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown("**Umidade Relativa e Velocidade do Vento**")
+            
+            # Criar subplots com eixos Y duplos
+            fig_combined = make_subplots(specs=[[{"secondary_y": True}]])
+            
+            if 'Umidade_Relativa' in df_clean.columns:
+                fig_combined.add_trace(
+                    go.Scatter(x=df_clean['Timestamp'], y=df_clean['Umidade_Relativa'],
+                             mode='lines', name='Umidade Relativa (%)', line=dict(color='#4A90E2')),
+                    secondary_y=False,
+                )
+            
+            if 'Velocidade_Vento' in df_clean.columns:
+                fig_combined.add_trace(
+                    go.Scatter(x=df_clean['Timestamp'], y=df_clean['Velocidade_Vento'],
+                             mode='lines', name='Velocidade do Vento (m/s)', line=dict(color='#50C878')),
+                    secondary_y=True,
+                )
+            
+            # Configurar eixos Y
+            fig_combined.update_xaxes(title_text="Data/Hora")
+            fig_combined.update_yaxes(title_text="Umidade Relativa (%)", secondary_y=False)
+            fig_combined.update_yaxes(title_text="Velocidade do Vento (m/s)", secondary_y=True)
+            
+            fig_combined.update_layout(
+                title='Umidade Relativa e Velocidade do Vento',
+                height=400,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_combined, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Estatísticas descritivas
+        st.markdown("#### Estatísticas Descritivas")
+        
+        # Selecionar apenas colunas numéricas
+        numeric_cols = ['Temperatura', 'Piranometro_1', 'Piranometro_2', 'Piranometro_Alab', 'Umidade_Relativa', 'Velocidade_Vento']
+        available_cols = [col for col in numeric_cols if col in df_clean.columns]
+        
+        if available_cols:
+            stats_df = df_clean[available_cols].describe().round(3)
+            stats_df.index = ['Contagem', 'Média', 'Desvio Padrão', 'Mínimo', '25%', '50% (Mediana)', '75%', 'Máximo']
+            
+            st.markdown('<div class="stats-container">', unsafe_allow_html=True)
+            st.dataframe(stats_df, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Distribuição dos dados por hora do dia
+        st.markdown("#### Distribuição por Hora do Dia")
+        
+        if len(df_clean) > 0:
+            df_clean['Hora'] = df_clean['Timestamp'].dt.hour
+            
+            # Gráfico de distribuição por hora
+            hourly_stats = df_clean.groupby('Hora')[available_cols].mean().reset_index()
+            
+            fig_hourly = go.Figure()
+            
+            colors = ['#00529C', '#FF6B35', '#F7931E', '#FFD23F', '#4A90E2', '#50C878']
+            
+            for i, col in enumerate(available_cols):
+                if col in hourly_stats.columns:
+                    fig_hourly.add_trace(go.Scatter(
+                        x=hourly_stats['Hora'], 
+                        y=hourly_stats[col],
+                        mode='lines+markers',
+                        name=col.replace('_', ' ').title(),
+                        line=dict(color=colors[i % len(colors)])
+                    ))
+            
+            fig_hourly.update_layout(
+                title='Valores Médios por Hora do Dia',
+                xaxis_title="Hora do Dia",
+                yaxis_title="Valores Médios",
+                height=400,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            
+            st.plotly_chart(fig_hourly, use_container_width=True)
 
 
 def main():
-   # Cabeçalho principal com logo da CSN
-   st.markdown("""
-   <div class="main-header">
-       <div class="logo-container">
-           <img src="https://upload.wikimedia.org/wikipedia/pt/e/eb/Companhia_Sider%C3%BArgica_Nacional.png" 
-                alt="Logo CSN" class="logo-img">
-           <div class="header-text">
-               <h1>Medições Usina Geradora Floriano</h1>
-               <p>Processador de Dados - Medicoes Diarias/Mensais</p>
-               <p><small>Busca Pontual | Tolerância ±10min | Zero Inferências</small></p>
-           </div>
-       </div>
-   </div>
-   """, unsafe_allow_html=True)
-   
-   # Inicializar o processador
-   if 'processor' not in st.session_state:
-       st.session_state.processor = ExactWeatherProcessor()
-   
-   # Sidebar com instruções
-   with st.sidebar:
-       st.markdown("### Instruções de Uso")
-       st.markdown("""
-       **Passo 1:** Upload do arquivo Excel anual
-       
-       **Passo 2:** Upload dos arquivos .dat (múltiplos)
-       
-       **Passo 3:** Clique em "Processar Dados"
-       
-       **Passo 4:** Baixe o Excel atualizado
-       """)
-       
-       st.markdown("---")
-       st.markdown("### Funcionalidades")
-       st.markdown("""
-       **Características:**
-       - Busca pontual de dados (sem médias)
-       - Tolerância de ±10 minutos
-       - Zero inferências ou preenchimentos
-       - Detecção de conflitos entre arquivos
-       - Mapeamento preciso por timestamp
-       - Gráficos de conferência das variáveis
-       - **NOVO:** Análise mensal automática
-       
-       **Lógica de Busca:**
-       - **Diária:** Para 10:00 → busca entre 09:50 e 10:10
-       - **Mensal:** Agrega todos os dados do dia para estatísticas
-       - Prioriza timestamp mais próximo
-       - Deixa vazio se não há dados na tolerância
-       """)
-       
-       st.markdown("---")
-       st.markdown("### Mapeamento de Colunas")
-       st.markdown("""
-       **Análise Diária:**
-       - **Temperatura**: Colunas B-AF (Dias 1-31)
-       - **Piranômetro 1**: Colunas AG-BK (Dias 1-31)
-       - **Piranômetro 2**: Colunas BL-CP (Dias 1-31)
-       - **Piranômetro Albedo**: Colunas CQ-DU (Dias 1-31)
-       - **Umidade**: Colunas DV-EZ (Dias 1-31)
-       - **Vento**: Colunas FA-GE (Dias 1-31)
-       
-       **Análise Mensal:**
-       - **9 variáveis** com Min/Max/Avg/Outliers
-       - **Processamento automático** de estatísticas diárias
-       """)
-   
-   # Layout principal
-   col1, col2 = st.columns([1, 1])
-   
-   with col1:
-       st.markdown("### Upload do Excel Anual")
-       excel_file = st.file_uploader(
-           "Selecione o arquivo Excel anual",
-           type=['xlsx', 'xls'],
-           help="Arquivo Excel com as abas XX-Analise Diaria e XX-Analise Mensal"
-       )
-   
-   with col2:
-       st.markdown("### Upload dos Arquivos .dat")
-       dat_files = st.file_uploader(
-           "Selecione os arquivos .dat (múltiplos)",
-           type=['dat'],
-           accept_multiple_files=True,
-           help="Arquivos de dados meteorológicos (.dat) com timestamps de 10 em 10 minutos"
-       )
-   
-   # Informações sobre os arquivos carregados
-   if dat_files:
-       st.markdown("### Arquivos .dat Carregados")
-       files_info = []
-       for file in dat_files:
-           files_info.append({
-               'Arquivo': file.name,
-               'Tamanho': f"{file.size / 1024:.1f} KB"
-           })
-       df_files = pd.DataFrame(files_info)
-       st.dataframe(df_files, use_container_width=True)
-   
-   # Botão de processamento
-   if excel_file and dat_files:
-       st.markdown("---")
-       col1, col2, col3 = st.columns([1, 2, 1])
-       with col2:
-           if st.button("Processar Dados - Atualizar Excel", use_container_width=True):
-               with st.spinner("Processando dados com busca pontual..."):
-                   # Processar arquivos .dat
-                   success = st.session_state.processor.process_dat_files(dat_files)
-                   
-                   if success:
-                       st.success("Arquivos .dat processados e consolidados com sucesso!")
-                       
-                       # Mostrar preview dos dados com gráficos
-                       st.session_state.processor.show_data_preview_and_charts()
-                       
-                       # Atualizar Excel
-                       st.markdown("### Atualizando Excel ...")
-                       excel_file.seek(0)  # Reset file pointer
-                       success, message = st.session_state.processor.update_excel_file(excel_file)
-                       
-                       if success:
-                           st.success(f"{message}")
-                           
-                           # Informações sobre abas atualizadas
-                           if st.session_state.processor.processed_sheets:
-                               st.markdown("### Abas Atualizadas")
-                               for sheet in st.session_state.processor.processed_sheets:
-                                   st.markdown(f"- {sheet}")
-                           
-                           # Botão de download
-                           updated_excel = st.session_state.processor.get_updated_excel_file()
-                           if updated_excel:
-                               st.markdown("### Download do Arquivo Atualizado")
-                               st.download_button(
-                                   label="Baixar Excel Atualizado",
-                                   data=updated_excel,
-                                   file_name=f"analise_completa_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                                   mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                   use_container_width=True
-                               )
-                       else:
-                           st.error(f"{message}")
-                   else:
-                       st.error("Erro ao processar arquivos .dat")
-   
-   # Informações adicionais
-   if not excel_file or not dat_files:
-       st.markdown("---")
-       st.markdown("### Aguardando Arquivos")
-       missing = []
-       if not excel_file:
-           missing.append("Arquivo Excel anual")
-       if not dat_files:
-           missing.append("Arquivos .dat")
-       
-       st.info(f"Por favor, faça upload dos seguintes arquivos: {', '.join(missing)}")
-       
-       if not dat_files:
-           st.markdown("""
-           **Sobre o Processamento Automático:**
-           - **Análise Diária:** Busca pontual com tolerância ±10min
-           - **Análise Mensal:** Estatísticas diárias automáticas (Min/Max/Avg/Outliers)
-           - Detecta automaticamente tipo de aba (Diária vs Mensal)
-           - Processa 9 variáveis meteorológicas
-           - Não preenche dados que não existem
-           - Gera gráficos para conferência visual dos dados
-           """)
-   
-   # Footer
-   st.markdown("---")
-   st.markdown("""
-   <div style="text-align: center; color: #666; padding: 1rem;">
-       <p>Processador de Dados Meteorológicos | Usina Geradora Floriano</p>
-       <p><small>Versão 2.0 - Análises Diárias e Mensais</small></p>
-   </div>
-   """, unsafe_allow_html=True)
+    # Cabeçalho principal com logo da CSN
+    st.markdown("""
+    <div class="main-header">
+        <div class="logo-container">
+            <img src="https://upload.wikimedia.org/wikipedia/pt/e/eb/Companhia_Sider%C3%BArgica_Nacional.png" 
+                 alt="Logo CSN" class="logo-img">
+            <div class="header-text">
+                <h1>Medições Usina Geradora Floriano</h1>
+                <p>Processador de Dados - Medicoes Diarias/Mensais</p>
+                <p><small>Busca Pontual | Tolerância ±10min | Zero Inferências</small></p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Inicializar o processador
+    if 'processor' not in st.session_state:
+        st.session_state.processor = ExactWeatherProcessor()
+    
+    # Sidebar com instruções
+    with st.sidebar:
+        st.markdown("### Instruções de Uso")
+        st.markdown("""
+        **Passo 1:** Upload do arquivo Excel anual
+        
+        **Passo 2:** Upload dos arquivos .dat (múltiplos)
+        
+        **Passo 3:** Clique em "Processar Dados"
+        
+        **Passo 4:** Baixe o Excel atualizado
+        """)
+        
+        st.markdown("---")
+        st.markdown("### Funcionalidades")
+        st.markdown("""
+        **Características:**
+        - Busca pontual de dados (sem médias)
+        - Tolerância de ±10 minutos
+        - Zero inferências ou preenchimentos
+        - Detecção de conflitos entre arquivos
+        - Mapeamento preciso por timestamp
+        - Gráficos de conferência das variáveis
+        - **NOVO:** Análise mensal automática
+        
+        **Lógica de Busca:**
+        - **Diária:** Para 10:00 → busca entre 09:50 e 10:10
+        - **Mensal:** Agrega todos os dados do dia para estatísticas
+        - Prioriza timestamp mais próximo
+        - Deixa vazio se não há dados na tolerância
+        """)
+        
+        st.markdown("---")
+        st.markdown("### Mapeamento de Colunas")
+        st.markdown("""
+        **Análise Diária:**
+        - **Temperatura**: Colunas B-AF (Dias 1-31)
+        - **Piranômetro 1**: Colunas AG-BK (Dias 1-31)
+        - **Piranômetro 2**: Colunas BL-CP (Dias 1-31)
+        - **Piranômetro Albedo**: Colunas CQ-DU (Dias 1-31)
+        - **Umidade**: Colunas DV-EZ (Dias 1-31)
+        - **Vento**: Colunas FA-GE (Dias 1-31)
+        
+        **Análise Mensal:**
+        - **9 variáveis** com Min/Max/Avg/Outliers
+        - **Processamento automático** de estatísticas diárias
+        """)
+    
+    # Layout principal
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.markdown("### Upload do Excel Anual")
+        excel_file = st.file_uploader(
+            "Selecione o arquivo Excel anual",
+            type=['xlsx', 'xls'],
+            help="Arquivo Excel com as abas XX-Analise Diaria e XX-Analise Mensal"
+        )
+    
+    with col2:
+        st.markdown("### Upload dos Arquivos .dat")
+        dat_files = st.file_uploader(
+            "Selecione os arquivos .dat (múltiplos)",
+            type=['dat'],
+            accept_multiple_files=True,
+            help="Arquivos de dados meteorológicos (.dat) com timestamps de 10 em 10 minutos"
+        )
+    
+    # Informações sobre os arquivos carregados
+    if dat_files:
+        st.markdown("### Arquivos .dat Carregados")
+        files_info = []
+        for file in dat_files:
+            files_info.append({
+                'Arquivo': file.name,
+                'Tamanho': f"{file.size / 1024:.1f} KB"
+            })
+        df_files = pd.DataFrame(files_info)
+        st.dataframe(df_files, use_container_width=True)
+    
+    # Botão de processamento
+    if excel_file and dat_files:
+        st.markdown("---")
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("Processar Dados - Atualizar Excel", use_container_width=True):
+                with st.spinner("Processando dados com busca pontual..."):
+                    # Processar arquivos .dat
+                    success = st.session_state.processor.process_dat_files(dat_files)
+                    
+                    if success:
+                        st.success("Arquivos .dat processados e consolidados com sucesso!")
+                        
+                        # Mostrar preview dos dados com gráficos
+                        st.session_state.processor.show_data_preview_and_charts()
+                        
+                        # Atualizar Excel
+                        st.markdown("### Atualizando Excel ...")
+                        excel_file.seek(0)  # Reset file pointer
+                        success, message = st.session_state.processor.update_excel_file(excel_file)
+                        
+                        if success:
+                            st.success(f"{message}")
+                            
+                            # Informações sobre abas atualizadas
+                            if st.session_state.processor.processed_sheets:
+                                st.markdown("### Abas Atualizadas")
+                                for sheet in st.session_state.processor.processed_sheets:
+                                    st.markdown(f"- {sheet}")
+                            
+                            # Botão de download
+                            updated_excel = st.session_state.processor.get_updated_excel_file()
+                            if updated_excel:
+                                st.markdown("### Download do Arquivo Atualizado")
+                                st.download_button(
+                                    label="Baixar Excel Atualizado",
+                                    data=updated_excel,
+                                    file_name=f"analise_completa_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    use_container_width=True
+                                )
+                        else:
+                            st.error(f"{message}")
+                    else:
+                        st.error("Erro ao processar arquivos .dat")
+    
+    # Informações adicionais
+    if not excel_file or not dat_files:
+        st.markdown("---")
+        st.markdown("### Aguardando Arquivos")
+        missing = []
+        if not excel_file:
+            missing.append("Arquivo Excel anual")
+        if not dat_files:
+            missing.append("Arquivos .dat")
+        
+        st.info(f"Por favor, faça upload dos seguintes arquivos: {', '.join(missing)}")
+        
+        if not dat_files:
+            st.markdown("""
+            **Sobre o Processamento Automático:**
+            - **Análise Diária:** Busca pontual com tolerância ±10min
+            - **Análise Mensal:** Estatísticas diárias automáticas (Min/Max/Avg/Outliers)
+            - Detecta automaticamente tipo de aba (Diária vs Mensal)
+            - Processa 9 variáveis meteorológicas
+            - Não preenche dados que não existem
+            - Gera gráficos para conferência visual dos dados
+            """)
+    
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+    <div style="text-align: center; color: #666; padding: 1rem;">
+        <p>Processador de Dados Meteorológicos | Usina Geradora Floriano</p>
+        <p><small>Versão 2.0 - Análises Diárias e Mensais</small></p>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
-   main()
+    main()
