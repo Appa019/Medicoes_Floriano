@@ -167,13 +167,16 @@ class CompleteWeatherProcessor:
                 data.set_index('TIMESTAMP', inplace=True)
                 all_dataframes.append(data)
                 
+                # Calcular dias únicos neste arquivo para informação
+                unique_dates = data.index.map(self._get_custom_date_for_timestamp).nunique()
+                
                 self.file_processing_info.append({
                     'arquivo': uploaded_file.name,
                     'registros': len(data),
                     'periodo_inicio': data.index.min().strftime('%Y-%m-%d %H:%M'),
                     'periodo_fim': data.index.max().strftime('%Y-%m-%d %H:%M'),
                     'dias_span': (data.index.max() - data.index.min()).days + 1,
-                    'dias_processados': 0,
+                    'dias_processados': unique_dates,
                     'status': '✅ Lido'
                 })
                 
@@ -215,12 +218,14 @@ class CompleteWeatherProcessor:
         
         # ETAPA 4: Processamento mensal e diário
         status_text.text("🔄 Processando dados mensais e diários...")
-        dias_processados = self._process_monthly_and_daily_data(df_final)
+        dias_processados_total = self._process_monthly_and_daily_data(df_final)
         
-        # Atualizar info de dias processados
+        # Atualizar info de dias processados total (para compatibilidade)
+        total_unique_days = df_final.index.map(self._get_custom_date_for_timestamp).nunique()
         for info in self.file_processing_info:
             if "✅" in info['status']:
-                info['dias_processados'] = dias_processados
+                # Manter o valor individual já calculado
+                pass
         
         progress_bar.progress(1.0)
         status_text.text("✅ Processamento concluído!")
