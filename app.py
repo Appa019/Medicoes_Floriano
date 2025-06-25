@@ -126,14 +126,32 @@ class CompleteWeatherProcessor:
     def _get_custom_date_for_timestamp(self, timestamp):
         """
         VERSÃO CORRIGIDA: Determina a qual 'dia customizado' pertence um timestamp
-        MODIFICAÇÃO: Aceita dias parciais, criando o dia mesmo com poucos dados
+        LÓGICA ESPECIAL: Detecta automaticamente dias parciais no final dos dados
         """
-        # Para timestamps após 10:00, pertence ao dia atual
-        if timestamp.hour > 10 or (timestamp.hour == 10 and timestamp.minute >= 0):
+        # Para timestamps >= 10:00, sempre pertence ao próprio dia
+        if timestamp.hour >= 10:
             return timestamp.date()
         else:
-            # Para timestamps antes de 10:00, pertence ao dia anterior
+            # Para timestamps < 10:00, normalmente pertence ao dia anterior
             return (timestamp - timedelta(days=1)).date()
+
+    def _detect_and_fix_partial_days(self, data):
+        """
+        NOVA FUNÇÃO: Detecta e corrige agrupamento de dias parciais
+        """
+        # Identificar o último dia nos dados
+        last_timestamp = data.index.max()
+        last_date = last_timestamp.date()
+        
+        # Se o último timestamp for antes de 10:00, é um dia parcial
+        if last_timestamp.hour < 10:
+            st.info(f"🔍 Detectado dia parcial: {last_date} (dados até {last_timestamp.strftime('%H:%M')})")
+            
+            # Reatribuir todos os dados desse dia para o próprio dia
+            mask = data.index.date == last_date
+            data.loc[mask, 'custom_date'] = last_date
+        
+        return data
 
     def process_dat_files(self, dat_files):
         """Processa múltiplos arquivos .dat consolidando por TIMESTAMP com lógica inteligente"""
@@ -217,11 +235,11 @@ class CompleteWeatherProcessor:
         progress_bar.progress(0.8)  # 80% após reamostragem
         
         # ETAPA 4: Processamento mensal e diário
-        status_text.text("🔄 Processando dados mensais e diários (INCLUINDO DIAS PARCIAIS)...")
+        status_text.text("🔄 Processando dados mensais e diários (DETECTANDO DIAS PARCIAIS)...")
         dias_processados_total = self._process_monthly_and_daily_data(df_final)
         
         progress_bar.progress(1.0)
-        status_text.text("✅ Processamento concluído com dias parciais incluídos!")
+        status_text.text("✅ Processamento concluído com detecção automática de dias parciais!")
         
         self._show_file_processing_summary()
         return not df_final.empty
@@ -280,13 +298,16 @@ class CompleteWeatherProcessor:
 
     def _process_monthly_and_daily_data(self, data):
         """
-        VERSÃO CORRIGIDA: Processa DataFrame consolidado aceitando dias parciais
+        VERSÃO CORRIGIDA: Processa DataFrame consolidado detectando e corrigindo dias parciais
         """
         if data.empty:
             return 0
         
         # Adicionar coluna de data customizada
         data['custom_date'] = data.index.map(self._get_custom_date_for_timestamp)
+        
+        # NOVA FUNCIONALIDADE: Detectar e corrigir dias parciais automaticamente
+        data = self._detect_and_fix_partial_days(data)
         
         dias_processados = 0
         
@@ -937,7 +958,8 @@ def main():
         st.markdown("### ✅ CORREÇÕES APLICADAS")
         st.markdown("""
         **🔧 Problemas Resolvidos:**
-        - ✅ Dias parciais agora são aceitos (ex: dia 24)
+        - ✅ Dias parciais detectados automaticamente
+        - ✅ Agrupamento correto de dados incompletos
         - ✅ Mapeamento de colunas corrigido
         - ✅ Lógica de dia customizado ajustada
         
@@ -995,7 +1017,7 @@ def main():
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("🚀 Processar Dados CORRIGIDO (Aceita Dias Parciais)", use_container_width=True):
+            if st.button("🚀 Processar Dados CORRIGIDO (Detecção Automática de Dias Parciais)", use_container_width=True):
                 with st.spinner("Processando dados com correções aplicadas..."):
                     # Processar arquivos .dat
                     success = st.session_state.processor.process_dat_files(dat_files)
