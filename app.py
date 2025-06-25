@@ -207,7 +207,7 @@ st.markdown("""
 
 class ExactWeatherProcessor:
     """
-    Processador de dados meteorológicos com busca EXATA tipo PROCV
+    Processador de dados meteorológicos com busca EXATA
     NÃO faz médias ou inferências - apenas busca dados pontuais com tolerância de ±10 minutos
     """
     def __init__(self):
@@ -375,7 +375,7 @@ class ExactWeatherProcessor:
 
     def update_excel_file(self, excel_file):
         """
-        Atualiza Excel com dados exatos usando lógica PROCV
+        Atualiza Excel com dados exatos
         """
         if not self.consolidated_data:
             return False, "Nenhum dado processado!"
@@ -456,7 +456,7 @@ class ExactWeatherProcessor:
 
     def _update_daily_analysis_exact(self, ws, month_timestamps, year, month):
         """
-        Atualiza análise diária usando busca EXATA tipo PROCV
+        Atualiza análise diária usando busca 
         """
         cells_updated = 0
         
@@ -784,7 +784,7 @@ def main():
                  alt="Logo CSN" class="logo-img">
             <div class="header-text">
                 <h1>Medições Usina Geradora Floriano</h1>
-                <p>Processador de Dados Meteorológicos - VERSÃO PROCV EXATO</p>
+                <p>Processador de Dados - Medicoes Diarias/Mensais</p>
                 <p><small>Busca Pontual | Tolerância ±10min | Zero Inferências</small></p>
             </div>
         </div>
@@ -873,7 +873,7 @@ def main():
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("Processar Dados PROCV EXATO", use_container_width=True):
+            if st.button("Processar Dados - Atualizar Excel", use_container_width=True):
                 with st.spinner("Processando dados com busca pontual..."):
                     # Processar arquivos .dat
                     success = st.session_state.processor.process_dat_files(dat_files)
@@ -885,7 +885,7 @@ def main():
                         st.session_state.processor.show_data_preview_and_charts()
                         
                         # Atualizar Excel
-                        st.markdown("### Atualizando Excel com Busca PROCV...")
+                        st.markdown("### Atualizando Excel ...")
                         excel_file.seek(0)  # Reset file pointer
                         success, message = st.session_state.processor.update_excel_file(excel_file)
                         
@@ -903,7 +903,7 @@ def main():
                             if updated_excel:
                                 st.markdown("### Download do Arquivo Atualizado")
                                 st.download_button(
-                                    label="Baixar Excel Atualizado (PROCV)",
+                                    label="Baixar Excel Atualizado",
                                     data=updated_excel,
                                     file_name=f"analise_procv_exato_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
