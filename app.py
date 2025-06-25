@@ -113,14 +113,14 @@ class CompleteWeatherProcessor:
             5: "05", 6: "06", 7: "07", 8: "08",
             9: "09", 10: "10", 11: "11", 12: "12"
         }
-        # Mapeamento de colunas CORRIGIDO para análise diária
+        # Mapeamento de colunas CORRETO baseado na estrutura real da planilha
         self.column_mapping = {
             'Temperatura': {'start_num': 2},        # B até AF (2-32)
-            'Piranometro_1': {'start_num': 33},     # AG até CL (33-64)  
-            'Piranometro_2': {'start_num': 65},     # CM até DR (65-96) - CORRIGIDO!
-            'Piranometro_Alab': {'start_num': 97},  # DS até EX (97-128) - CORRIGIDO!
-            'Umidade_Relativa': {'start_num': 129}, # EY até GD (129-160) - CORRIGIDO!
-            'Velocidade_Vento': {'start_num': 161}  # GE até IJ (161-192) - CORRIGIDO!
+            'Piranometro_1': {'start_num': 33},     # AG até BK (33-63)
+            'Piranometro_2': {'start_num': 64},     # BL até CP (64-94)
+            'Piranometro_Alab': {'start_num': 95},  # CQ até DU (95-125)
+            'Umidade_Relativa': {'start_num': 126}, # DV até EZ (126-156)
+            'Velocidade_Vento': {'start_num': 157}  # FA até GE (157-187)
         }
 
     def _get_custom_date_for_timestamp(self, timestamp):
@@ -616,7 +616,7 @@ class CompleteWeatherProcessor:
         target_col_num = start_col_num + (dia_numero - 1)
         
         # Verificar se a coluna está dentro dos limites válidos
-        if target_col_num > 192:  # Última coluna IJ = 192
+        if target_col_num > 187:  # Última coluna GE = 187
             return None
             
         return get_column_letter(target_col_num)
@@ -943,11 +943,11 @@ def main():
         
         **📊 Mapeamento Correto:**
         - Temperatura: Colunas B-AF (2-32)
-        - Piranômetro 1: Colunas AG-CL (33-64)
-        - Piranômetro 2: Colunas CM-DR (65-96)
-        - Piranômetro Albedo: Colunas DS-EX (97-128)
-        - Umidade: Colunas EY-GD (129-160)
-        - Vento: Colunas GE-IJ (161-192)
+        - Piranômetro 1: Colunas AG-BK (33-63)
+        - Piranômetro 2: Colunas BL-CP (64-94)
+        - Piranômetro Albedo: Colunas CQ-DU (95-125)
+        - Umidade: Colunas DV-EZ (126-156)
+        - Vento: Colunas FA-GE (157-187)
         """)
         
         st.markdown("---")
