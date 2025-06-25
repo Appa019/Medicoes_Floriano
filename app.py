@@ -9,12 +9,15 @@ import warnings
 import io
 import tempfile
 import zipfile
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 warnings.filterwarnings('ignore')
 
 # Configuração da página
 st.set_page_config(
     page_title="Medições Usina Geradora Floriano",
-    page_icon="🌤️",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -25,82 +28,140 @@ st.markdown("""
     .main-header {
         background: linear-gradient(90deg, #00529C 0%, #231F20 100%);
         padding: 2rem;
-        border-radius: 10px;
+        border-radius: 15px;
         margin-bottom: 2rem;
         text-align: center;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     }
     
     .main-header h1 {
         color: white;
-        font-size: 2.5rem;
+        font-size: 2.8rem;
         margin: 0;
         font-weight: bold;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
     }
     
     .main-header p {
         color: #E8E8E8;
-        font-size: 1.2rem;
+        font-size: 1.3rem;
         margin: 0.5rem 0 0 0;
     }
     
     .stButton > button {
-        background-color: #00529C;
+        background: linear-gradient(45deg, #00529C, #0066CC);
         color: white;
         border: none;
-        border-radius: 5px;
-        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        padding: 0.7rem 1.5rem;
         font-weight: bold;
-        transition: all 0.3s;
+        font-size: 1.1rem;
+        transition: all 0.3s ease;
+        box-shadow: 0 3px 10px rgba(0,82,156,0.3);
     }
     
     .stButton > button:hover {
-        background-color: #231F20;
+        background: linear-gradient(45deg, #231F20, #404040);
         transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,82,156,0.4);
     }
     
     .success-box {
-        background-color: #d4edda;
+        background: linear-gradient(135deg, #d4edda, #c3e6cb);
         border: 1px solid #c3e6cb;
-        border-radius: 5px;
-        padding: 1rem;
+        border-radius: 10px;
+        padding: 1.5rem;
         margin: 1rem 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
     
     .error-box {
-        background-color: #f8d7da;
+        background: linear-gradient(135deg, #f8d7da, #f5c6cb);
         border: 1px solid #f5c6cb;
-        border-radius: 5px;
-        padding: 1rem;
+        border-radius: 10px;
+        padding: 1.5rem;
         margin: 1rem 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
     
     .info-box {
-        background-color: #d1ecf1;
+        background: linear-gradient(135deg, #d1ecf1, #bee5eb);
         border: 1px solid #bee5eb;
-        border-radius: 5px;
-        padding: 1rem;
+        border-radius: 10px;
+        padding: 1.5rem;
         margin: 1rem 0;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
     
     .warning-box {
-        background-color: #fff3cd;
+        background: linear-gradient(135deg, #fff3cd, #ffeaa7);
         border: 1px solid #ffeaa7;
-        border-radius: 5px;
-        padding: 1rem;
+        border-radius: 10px;
+        padding: 1.5rem;
         margin: 1rem 0;
-    }
-    
-    .sidebar .sidebar-content {
-        background-color: #f8f9fa;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
     
     .metric-card {
-        background-color: white;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #00529C;
+        background: linear-gradient(135deg, #ffffff, #f8f9fa);
+        padding: 1.5rem;
+        border-radius: 12px;
+        border-left: 5px solid #00529C;
         margin: 0.5rem 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transition: transform 0.2s ease;
+    }
+    
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+    }
+    
+    .metric-card h4 {
+        color: #00529C;
+        margin: 0 0 0.5rem 0;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+    
+    .metric-card h2 {
+        color: #231F20;
+        margin: 0;
+        font-size: 2rem;
+        font-weight: bold;
+    }
+    
+    .stats-container {
+        background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+        padding: 2rem;
+        border-radius: 15px;
+        margin: 1rem 0;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    .chart-container {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin: 1rem 0;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        border: 1px solid #e9ecef;
+    }
+    
+    .sidebar .sidebar-content {
+        background: linear-gradient(180deg, #f8f9fa, #ffffff);
+    }
+    
+    .stDataFrame {
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    .stExpander {
+        border-radius: 10px;
+        border: 1px solid #e9ecef;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -137,7 +198,7 @@ class ExactWeatherProcessor:
         
         # ETAPA 1: Ler todos os arquivos e consolidar
         for i, uploaded_file in enumerate(dat_files):
-            status_text.text(f"🔄 Processando {i+1}/{total_files}: {uploaded_file.name}")
+            status_text.text(f"Processando {i+1}/{total_files}: {uploaded_file.name}")
             try:
                 uploaded_file.seek(0)
                 data = pd.read_csv(uploaded_file, skiprows=4, parse_dates=[0])
@@ -192,7 +253,7 @@ class ExactWeatherProcessor:
                     'registros': len(data),
                     'periodo_inicio': data['TIMESTAMP'].min().strftime('%Y-%m-%d %H:%M'),
                     'periodo_fim': data['TIMESTAMP'].max().strftime('%Y-%m-%d %H:%M'),
-                    'status': '✅ Processado'
+                    'status': 'Processado com sucesso'
                 })
                 
             except Exception as e:
@@ -201,12 +262,12 @@ class ExactWeatherProcessor:
                     'registros': 0,
                     'periodo_inicio': 'N/A',
                     'periodo_fim': 'N/A',
-                    'status': f'❌ Erro: {str(e)}'
+                    'status': f'Erro: {str(e)}'
                 })
             
             progress_bar.progress((i + 1) / total_files)
         
-        status_text.text("✅ Consolidação concluída!")
+        status_text.text("Consolidação concluída com sucesso!")
         
         # Mostrar conflitos se detectados
         if self.conflicts_detected:
@@ -220,17 +281,17 @@ class ExactWeatherProcessor:
     def _show_conflicts(self):
         """Mostra conflitos detectados entre arquivos"""
         st.markdown("---")
-        st.markdown("### ⚠️ CONFLITOS DETECTADOS")
+        st.markdown("### Conflitos Detectados")
         
         st.markdown(f"""
         <div class="warning-box">
-            <h4>🔍 {len(self.conflicts_detected)} conflito(s) encontrado(s)</h4>
+            <h4>{len(self.conflicts_detected)} conflito(s) encontrado(s)</h4>
             <p>Timestamps idênticos em múltiplos arquivos. Usando dados do último arquivo processado.</p>
         </div>
         """, unsafe_allow_html=True)
         
         # Mostrar detalhes dos conflitos
-        with st.expander("🔍 Ver Detalhes dos Conflitos"):
+        with st.expander("Ver Detalhes dos Conflitos"):
             for i, conflict in enumerate(self.conflicts_detected[:10]):  # Mostrar só os primeiros 10
                 st.markdown(f"**Conflito {i+1}: {conflict['timestamp']}**")
                 col1, col2 = st.columns(2)
@@ -308,12 +369,12 @@ class ExactWeatherProcessor:
                 year, month = year_month.split('-')
                 month_num = int(month)
                 
-                status_text.text(f"🔍 Processando mês {month}/{year}...")
+                status_text.text(f"Processando mês {month}/{year}...")
                 
                 # Buscar aba correspondente
                 sheet_name = self._find_daily_analysis_sheet(wb.sheetnames, month_num)
                 if not sheet_name:
-                    st.warning(f"⚠️ Aba para mês {month:02d} não encontrada!")
+                    st.warning(f"Aba para mês {month:02d} não encontrada!")
                     continue
                 
                 ws = wb[sheet_name]
@@ -328,7 +389,7 @@ class ExactWeatherProcessor:
             
             # Salvar alterações
             wb.save(self.excel_path)
-            status_text.text("✅ Atualização concluída!")
+            status_text.text("Atualização concluída com sucesso!")
             
             if sheets_updated > 0:
                 return True, f"Sucesso! {sheets_updated} aba(s) atualizada(s), {total_cells_updated} célula(s) preenchida(s)"
@@ -359,7 +420,6 @@ class ExactWeatherProcessor:
         Atualiza análise diária usando busca EXATA tipo PROCV
         """
         cells_updated = 0
-        debug_info = []
         
         # Para cada horário da planilha (00:00 a 23:00)
         for hour in range(24):
@@ -382,10 +442,6 @@ class ExactWeatherProcessor:
                     # Nenhum dado dentro da tolerância - deixar vazio
                     continue
                 
-                # Debug para dia 24
-                if day == 24 and hour <= 10:
-                    debug_info.append(f"Dia {day}, Hora {hour:02d}:00 → Encontrado: {closest_timestamp}")
-                
                 # Obter dados do timestamp encontrado
                 data = month_timestamps[closest_timestamp]
                 
@@ -399,21 +455,9 @@ class ExactWeatherProcessor:
                         try:
                             ws[f'{col_letter}{row_num}'] = value
                             cells_updated += 1
-                            
-                            # Debug adicional para dia 24
-                            if day == 24 and hour <= 10 and variable == 'Temperatura':
-                                debug_info.append(f"  → Escrevendo {value} em {col_letter}{row_num}")
-                                
-                        except Exception as e:
-                            # Log do erro se necessário, mas continua processamento
-                            if day == 24 and hour <= 10:
-                                debug_info.append(f"  → ERRO ao escrever em {col_letter}{row_num}: {e}")
-        
-        # Mostrar debug info se houver dados do dia 24
-        if debug_info:
-            st.markdown("### 🔍 Debug - Dia 24:")
-            for info in debug_info[:20]:  # Mostrar só os primeiros 20
-                st.text(info)
+                        except Exception:
+                            # Continua processamento mesmo com erro
+                            pass
         
         return cells_updated
 
@@ -436,25 +480,20 @@ class ExactWeatherProcessor:
             return None
             
         col_letter = get_column_letter(target_col_num)
-        
-        # Debug para dia 24
-        if day_number == 24:
-            st.text(f"Debug coluna - {variable} Dia{day_number}: coluna {start_col_num} + {day_number-1} = {target_col_num} ({col_letter})")
-        
         return col_letter
 
     def _show_file_processing_summary(self):
         """Mostra resumo detalhado do processamento"""
         if hasattr(self, 'file_processing_info') and self.file_processing_info:
             st.markdown("---")
-            st.markdown("### 📄 Resumo do Processamento")
+            st.markdown("### Resumo do Processamento")
             
             # Criar DataFrame com as informações
             df_files = pd.DataFrame(self.file_processing_info)
             
             # Calcular totais
             total_records = df_files['registros'].sum()
-            total_files_success = len([f for f in self.file_processing_info if '✅' in f['status']])
+            total_files_success = len([f for f in self.file_processing_info if 'sucesso' in f['status'].lower()])
             total_timestamps = len(self.consolidated_data)
             
             # Mostrar métricas gerais
@@ -462,7 +501,7 @@ class ExactWeatherProcessor:
             with col1:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <h4>📁 Arquivos OK</h4>
+                    <h4>Arquivos Processados</h4>
                     <h2>{total_files_success}</h2>
                 </div>
                 """, unsafe_allow_html=True)
@@ -470,7 +509,7 @@ class ExactWeatherProcessor:
             with col2:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <h4>📊 Registros Lidos</h4>
+                    <h4>Registros Lidos</h4>
                     <h2>{total_records:,}</h2>
                 </div>
                 """, unsafe_allow_html=True)
@@ -478,7 +517,7 @@ class ExactWeatherProcessor:
             with col3:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <h4>🕐 Timestamps Únicos</h4>
+                    <h4>Timestamps Únicos</h4>
                     <h2>{total_timestamps:,}</h2>
                 </div>
                 """, unsafe_allow_html=True)
@@ -486,13 +525,13 @@ class ExactWeatherProcessor:
             with col4:
                 st.markdown(f"""
                 <div class="metric-card">
-                    <h4>⚠️ Conflitos</h4>
+                    <h4>Conflitos Detectados</h4>
                     <h2>{len(self.conflicts_detected)}</h2>
                 </div>
                 """, unsafe_allow_html=True)
             
             # Tabela detalhada
-            st.markdown("#### 📋 Detalhes por Arquivo")
+            st.markdown("#### Detalhes por Arquivo")
             df_display = df_files.copy()
             df_display.columns = ['Arquivo', 'Registros', 'Início', 'Fim', 'Status']
             df_display['Registros'] = df_display['Registros'].apply(lambda x: f"{x:,}" if x > 0 else "0")
@@ -506,17 +545,17 @@ class ExactWeatherProcessor:
                 return f.read()
         return None
 
-    def show_data_preview(self):
-        """Mostra preview dos dados consolidados"""
+    def show_data_preview_and_charts(self):
+        """Mostra preview dos dados consolidados com gráficos para conferência"""
         if not self.consolidated_data:
             return
         
         st.markdown("---")
-        st.markdown("### 🔍 Preview dos Dados Consolidados (PROCV Exato)")
+        st.markdown("### Análise dos Dados Consolidados")
         
         # Converter para DataFrame para visualização
         preview_data = []
-        for timestamp, data in list(self.consolidated_data.items())[:100]:  # Primeiros 100 registros
+        for timestamp, data in self.consolidated_data.items():
             row = {'Timestamp': timestamp}
             row.update(data)
             preview_data.append(row)
@@ -525,10 +564,8 @@ class ExactWeatherProcessor:
             df_preview = pd.DataFrame(preview_data)
             df_preview = df_preview.sort_values('Timestamp')
             
-            st.dataframe(df_preview, use_container_width=True)
-            
             # Estatísticas gerais
-            st.markdown("#### 📊 Estatísticas Gerais")
+            st.markdown("#### Estatísticas Gerais")
             col1, col2, col3 = st.columns(3)
             
             with col1:
@@ -547,17 +584,165 @@ class ExactWeatherProcessor:
                 for ts in self.consolidated_data.keys():
                     months.add(f"{ts.year}-{ts.month:02d}")
                 st.metric("Meses Cobertos", len(months))
+            
+            # Gráficos para conferência das variáveis
+            self._create_variable_charts(df_preview)
+            
+            # Preview da tabela de dados
+            st.markdown("#### Preview dos Dados (Primeiros 100 registros)")
+            st.dataframe(df_preview.head(100), use_container_width=True)
+            
         else:
             st.info("Nenhum dado disponível para preview.")
+
+    def _create_variable_charts(self, df):
+        """Cria gráficos para conferência das variáveis meteorológicas"""
+        st.markdown("#### Gráficos de Conferência das Variáveis")
+        
+        # Preparar dados para gráficos
+        df_clean = df.dropna()
+        
+        if len(df_clean) == 0:
+            st.warning("Não há dados suficientes para gerar gráficos.")
+            return
+        
+        # Gráfico 1: Temperatura ao longo do tempo
+        with st.container():
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown("**Temperatura (°C)**")
+            
+            fig_temp = px.line(df_clean, x='Timestamp', y='Temperatura',
+                              title='Variação da Temperatura ao Longo do Tempo',
+                              color_discrete_sequence=['#00529C'])
+            fig_temp.update_layout(
+                xaxis_title="Data/Hora",
+                yaxis_title="Temperatura (°C)",
+                height=400,
+                showlegend=False
+            )
+            st.plotly_chart(fig_temp, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Gráfico 2: Piranômetros (Radiação Solar)
+        with st.container():
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown("**Radiação Solar (kW/m²)**")
+            
+            fig_pir = go.Figure()
+            
+            if 'Piranometro_1' in df_clean.columns:
+                fig_pir.add_trace(go.Scatter(x=df_clean['Timestamp'], y=df_clean['Piranometro_1'],
+                                           mode='lines', name='Piranômetro 1', line=dict(color='#FF6B35')))
+            
+            if 'Piranometro_2' in df_clean.columns:
+                fig_pir.add_trace(go.Scatter(x=df_clean['Timestamp'], y=df_clean['Piranometro_2'],
+                                           mode='lines', name='Piranômetro 2', line=dict(color='#F7931E')))
+            
+            if 'Piranometro_Alab' in df_clean.columns:
+                fig_pir.add_trace(go.Scatter(x=df_clean['Timestamp'], y=df_clean['Piranometro_Alab'],
+                                           mode='lines', name='Piranômetro Albedo', line=dict(color='#FFD23F')))
+            
+            fig_pir.update_layout(
+                title='Radiação Solar - Comparação dos Piranômetros',
+                xaxis_title="Data/Hora",
+                yaxis_title="Radiação Solar (kW/m²)",
+                height=400,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_pir, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Gráfico 3: Umidade e Velocidade do Vento
+        with st.container():
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown("**Umidade Relativa e Velocidade do Vento**")
+            
+            # Criar subplots com eixos Y duplos
+            fig_combined = make_subplots(specs=[[{"secondary_y": True}]])
+            
+            if 'Umidade_Relativa' in df_clean.columns:
+                fig_combined.add_trace(
+                    go.Scatter(x=df_clean['Timestamp'], y=df_clean['Umidade_Relativa'],
+                             mode='lines', name='Umidade Relativa (%)', line=dict(color='#4A90E2')),
+                    secondary_y=False,
+                )
+            
+            if 'Velocidade_Vento' in df_clean.columns:
+                fig_combined.add_trace(
+                    go.Scatter(x=df_clean['Timestamp'], y=df_clean['Velocidade_Vento'],
+                             mode='lines', name='Velocidade do Vento (m/s)', line=dict(color='#50C878')),
+                    secondary_y=True,
+                )
+            
+            # Configurar eixos Y
+            fig_combined.update_xaxes(title_text="Data/Hora")
+            fig_combined.update_yaxes(title_text="Umidade Relativa (%)", secondary_y=False)
+            fig_combined.update_yaxes(title_text="Velocidade do Vento (m/s)", secondary_y=True)
+            
+            fig_combined.update_layout(
+                title='Umidade Relativa e Velocidade do Vento',
+                height=400,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_combined, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Estatísticas descritivas
+        st.markdown("#### Estatísticas Descritivas")
+        
+        # Selecionar apenas colunas numéricas
+        numeric_cols = ['Temperatura', 'Piranometro_1', 'Piranometro_2', 'Piranometro_Alab', 'Umidade_Relativa', 'Velocidade_Vento']
+        available_cols = [col for col in numeric_cols if col in df_clean.columns]
+        
+        if available_cols:
+            stats_df = df_clean[available_cols].describe().round(3)
+            stats_df.index = ['Contagem', 'Média', 'Desvio Padrão', 'Mínimo', '25%', '50% (Mediana)', '75%', 'Máximo']
+            
+            st.markdown('<div class="stats-container">', unsafe_allow_html=True)
+            st.dataframe(stats_df, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Distribuição dos dados por hora do dia
+        st.markdown("#### Distribuição por Hora do Dia")
+        
+        if len(df_clean) > 0:
+            df_clean['Hora'] = df_clean['Timestamp'].dt.hour
+            
+            # Gráfico de distribuição por hora
+            hourly_stats = df_clean.groupby('Hora')[available_cols].mean().reset_index()
+            
+            fig_hourly = go.Figure()
+            
+            colors = ['#00529C', '#FF6B35', '#F7931E', '#FFD23F', '#4A90E2', '#50C878']
+            
+            for i, col in enumerate(available_cols):
+                if col in hourly_stats.columns:
+                    fig_hourly.add_trace(go.Scatter(
+                        x=hourly_stats['Hora'], 
+                        y=hourly_stats[col],
+                        mode='lines+markers',
+                        name=col.replace('_', ' ').title(),
+                        line=dict(color=colors[i % len(colors)])
+                    ))
+            
+            fig_hourly.update_layout(
+                title='Valores Médios por Hora do Dia',
+                xaxis_title="Hora do Dia",
+                yaxis_title="Valores Médios",
+                height=400,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            
+            st.plotly_chart(fig_hourly, use_container_width=True)
 
 
 def main():
     # Cabeçalho principal
     st.markdown("""
     <div class="main-header">
-        <h1>🌤️ Medições Usina Geradora Floriano</h1>
+        <h1>Medições Usina Geradora Floriano</h1>
         <p>Processador de Dados Meteorológicos - VERSÃO PROCV EXATO</p>
-        <p><small>🎯 Busca Pontual | ⏱️ Tolerância ±10min | 🚫 Zero Inferências</small></p>
+        <p><small>Busca Pontual | Tolerância ±10min | Zero Inferências</small></p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -567,7 +752,7 @@ def main():
     
     # Sidebar com instruções
     with st.sidebar:
-        st.markdown("### 📋 Instruções")
+        st.markdown("### Instruções de Uso")
         st.markdown("""
         **Passo 1:** Upload do arquivo Excel anual
         
@@ -579,23 +764,24 @@ def main():
         """)
         
         st.markdown("---")
-        st.markdown("### 🎯 VERSÃO PROCV EXATO")
+        st.markdown("### Funcionalidades")
         st.markdown("""
-        **🔧 Funcionalidades:**
-        - 🎯 Busca pontual de dados (sem médias)
-        - ⏱️ Tolerância de ±10 minutos
-        - 🚫 Zero inferências ou preenchimentos
-        - ⚠️ Detecção de conflitos entre arquivos
-        - 📊 Mapeamento preciso por timestamp
+        **Características:**
+        - Busca pontual de dados (sem médias)
+        - Tolerância de ±10 minutos
+        - Zero inferências ou preenchimentos
+        - Detecção de conflitos entre arquivos
+        - Mapeamento preciso por timestamp
+        - Gráficos de conferência das variáveis
         
-        **⏰ Lógica de Busca:**
+        **Lógica de Busca:**
         - Para 10:00 → busca entre 09:50 e 10:10
         - Prioriza timestamp mais próximo
         - Deixa vazio se não há dados na tolerância
         """)
         
         st.markdown("---")
-        st.markdown("### 📊 Mapeamento de Colunas")
+        st.markdown("### Mapeamento de Colunas")
         st.markdown("""
         - **Temperatura**: Colunas B-AF (Dias 1-31)
         - **Piranômetro 1**: Colunas AG-BK (Dias 1-31)
@@ -609,7 +795,7 @@ def main():
     col1, col2 = st.columns([1, 1])
     
     with col1:
-        st.markdown("### 📊 Upload do Excel Anual")
+        st.markdown("### Upload do Excel Anual")
         excel_file = st.file_uploader(
             "Selecione o arquivo Excel anual",
             type=['xlsx', 'xls'],
@@ -617,7 +803,7 @@ def main():
         )
     
     with col2:
-        st.markdown("### 📁 Upload dos Arquivos .dat")
+        st.markdown("### Upload dos Arquivos .dat")
         dat_files = st.file_uploader(
             "Selecione os arquivos .dat (múltiplos)",
             type=['dat'],
@@ -627,7 +813,7 @@ def main():
     
     # Informações sobre os arquivos carregados
     if dat_files:
-        st.markdown("### 📋 Arquivos .dat Carregados")
+        st.markdown("### Arquivos .dat Carregados")
         files_info = []
         for file in dat_files:
             files_info.append({
@@ -642,74 +828,75 @@ def main():
         st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("🎯 Processar Dados PROCV EXATO", use_container_width=True):
+            if st.button("Processar Dados PROCV EXATO", use_container_width=True):
                 with st.spinner("Processando dados com busca pontual..."):
                     # Processar arquivos .dat
                     success = st.session_state.processor.process_dat_files(dat_files)
                     
                     if success:
-                        st.success("✅ Arquivos .dat processados e consolidados!")
+                        st.success("Arquivos .dat processados e consolidados com sucesso!")
                         
-                        # Mostrar preview dos dados
-                        st.session_state.processor.show_data_preview()
+                        # Mostrar preview dos dados com gráficos
+                        st.session_state.processor.show_data_preview_and_charts()
                         
                         # Atualizar Excel
-                        st.markdown("### 🔄 Atualizando Excel com Busca PROCV...")
+                        st.markdown("### Atualizando Excel com Busca PROCV...")
                         excel_file.seek(0)  # Reset file pointer
                         success, message = st.session_state.processor.update_excel_file(excel_file)
                         
                         if success:
-                            st.success(f"✅ {message}")
+                            st.success(f"{message}")
                             
                             # Informações sobre abas atualizadas
                             if st.session_state.processor.processed_sheets:
-                                st.markdown("### 📑 Abas Atualizadas")
+                                st.markdown("### Abas Atualizadas")
                                 for sheet in st.session_state.processor.processed_sheets:
-                                    st.markdown(f"- ✅ {sheet}")
+                                    st.markdown(f"- {sheet}")
                             
                             # Botão de download
                             updated_excel = st.session_state.processor.get_updated_excel_file()
                             if updated_excel:
-                                st.markdown("### 📥 Download do Arquivo Atualizado")
+                                st.markdown("### Download do Arquivo Atualizado")
                                 st.download_button(
-                                    label="📥 Baixar Excel Atualizado (PROCV)",
+                                    label="Baixar Excel Atualizado (PROCV)",
                                     data=updated_excel,
                                     file_name=f"analise_procv_exato_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                     use_container_width=True
                                 )
                         else:
-                            st.error(f"❌ {message}")
+                            st.error(f"{message}")
                     else:
-                        st.error("❌ Erro ao processar arquivos .dat")
+                        st.error("Erro ao processar arquivos .dat")
     
     # Informações adicionais
     if not excel_file or not dat_files:
         st.markdown("---")
-        st.markdown("### 🔍 Aguardando Arquivos")
+        st.markdown("### Aguardando Arquivos")
         missing = []
         if not excel_file:
-            missing.append("📊 Arquivo Excel anual")
+            missing.append("Arquivo Excel anual")
         if not dat_files:
-            missing.append("📁 Arquivos .dat")
+            missing.append("Arquivos .dat")
         
         st.info(f"Por favor, faça upload dos seguintes arquivos: {', '.join(missing)}")
         
         if not dat_files:
             st.markdown("""
-            **💡 Sobre a Busca PROCV Exata:**
-            - 🎯 Busca dados pontuais sem fazer médias
-            - ⏱️ Tolerância de ±10 minutos para cada horário
-            - 🚫 Não preenche dados que não existem
-            - ⚠️ Detecta e alerta sobre conflitos entre arquivos
-            - 📊 Mapeia diretamente timestamp → célula da planilha
+            **Sobre a Busca PROCV Exata:**
+            - Busca dados pontuais sem fazer médias
+            - Tolerância de ±10 minutos para cada horário
+            - Não preenche dados que não existem
+            - Detecta e alerta sobre conflitos entre arquivos
+            - Mapeia diretamente timestamp → célula da planilha
+            - Gera gráficos para conferência visual dos dados
             """)
     
     # Footer
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #666; padding: 1rem;">
-        <p>🌤️ Processador de Dados Meteorológicos | Usina Geradora Floriano</p>
+        <p>Processador de Dados Meteorológicos | Usina Geradora Floriano</p>
         <p><small>Versão PROCV EXATO - Busca Pontual com Tolerância ±10min</small></p>
     </div>
     """, unsafe_allow_html=True)
@@ -717,3 +904,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
