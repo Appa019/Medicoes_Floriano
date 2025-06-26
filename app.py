@@ -1002,7 +1002,7 @@ class ExactWeatherProcessor:
             
             if 'Piranometro_Alab' in df_clean.columns:
                 fig_pir.add_trace(go.Scatter(x=df_clean['Timestamp'], y=df_clean['Piranometro_Alab'],
-                                           mode='lines', name='Piranômetro Albedo', line=dict(color='#FFD23F')))
+                                           mode='lines', name='Piranômetro Alabiótico', line=dict(color='#FFD23F')))
             
             fig_pir.update_layout(
                 title='Radiação Solar - Comparação dos Piranômetros',
@@ -1157,7 +1157,7 @@ def main():
         - **Temperatura**: Colunas B-AF (Dias 1-31)
         - **Piranômetro 1**: Colunas AG-BK (Dias 1-31)
         - **Piranômetro 2**: Colunas BL-CP (Dias 1-31)
-        - **Piranômetro Albedo**: Colunas CQ-DU (Dias 1-31)
+        - **Piranômetro Alabiótico**: Colunas CQ-DU (Dias 1-31)
         - **Umidade**: Colunas DV-EZ (Dias 1-31)
         - **Vento**: Colunas FA-GE (Dias 1-31)
         
