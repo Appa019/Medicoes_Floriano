@@ -1263,7 +1263,7 @@ class ExactWeatherProcessor:
             for i, month_num in enumerate(available_months):
                 col_idx = i % 6
                 with cols[col_idx]:
-                    if st.checkbox(month_names[month_num], key=f"month_{month_num}"):
+                    if st.checkbox(month_names[month_num], key=f"month_{month_num}_dash"):
                         selected_months.append(month_num)
         
         with col2:
@@ -1271,7 +1271,7 @@ class ExactWeatherProcessor:
             analysis_type = st.radio(
                 "Selecione o tipo:",
                 ["Análise Diária", "Análise Mensal"],
-                key="analysis_type"
+                key="analysis_type_dash"
             )
         
         # Salvar seleções no session_state
@@ -1619,12 +1619,17 @@ def main():
     if 'show_dashboard' not in st.session_state:
         st.session_state.show_dashboard = False
     
+    # Controle para manter dados após rerun
+    if 'processing_completed' not in st.session_state:
+        st.session_state.processing_completed = False
+    
     # Verificar se deve mostrar dashboard
     if st.session_state.show_dashboard:
         # Botão para voltar ao processamento
+        st.markdown("---")
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            if st.button("⬅️ Voltar ao Processamento", use_container_width=True):
+            if st.button("⬅️ Voltar ao Processamento", use_container_width=True, key="back_to_processing"):
                 st.session_state.show_dashboard = False
                 st.rerun()
         
@@ -1758,8 +1763,9 @@ def main():
                             
                             # Botão do dashboard
                             st.markdown("### Dashboard de Análise")
-                            if st.button("📊 Ver Dashboard de Análise", use_container_width=True):
+                            if st.button("📊 Ver Dashboard de Análise", use_container_width=True, key="show_dashboard_btn"):
                                 st.session_state.show_dashboard = True
+                                st.session_state.processing_completed = True
                                 st.rerun()
                                     
                         else:
