@@ -171,6 +171,25 @@ st.markdown("""
         border: 1px solid #e9ecef;
     }
     
+    .dashboard-header {
+        background: linear-gradient(135deg, #00529C, #0066CC);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin: 1rem 0 2rem 0;
+        text-align: center;
+        box-shadow: 0 4px 15px rgba(0,82,156,0.3);
+    }
+    
+    .dashboard-filters {
+        background: linear-gradient(135deg, #f8f9fa, #ffffff);
+        padding: 1.5rem;
+        border-radius: 12px;
+        margin: 1rem 0;
+        border: 1px solid #e9ecef;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    
     .sidebar .sidebar-content {
         background: linear-gradient(180deg, #f8f9fa, #ffffff);
     }
@@ -1097,6 +1116,484 @@ class ExactWeatherProcessor:
             
             st.plotly_chart(fig_hourly, use_container_width=True)
 
+    # === NOVO: FUNCIONALIDADES DO DASHBOARD ===
+    
+    def load_excel_data_for_dashboard(self):
+        """Carrega dados do Excel atualizado para o dashboard"""
+        if not self.excel_path or not os.path.exists(self.excel_path):
+            return None
+        
+        try:
+            wb = load_workbook(self.excel_path)
+            excel_data = {}
+            
+            # Carregar dados das abas mensais
+            for sheet_name in wb.sheetnames:
+                if "Analise Mensal" in sheet_name:
+                    # Extrair número do mês do nome da aba
+                    month_str = sheet_name.split('-')[0]
+                    try:
+                        month_num = int(month_str)
+                        excel_data[month_num] = self._read_monthly_sheet_data(wb[sheet_name], month_num)
+                    except ValueError:
+                        continue
+            
+            return excel_data
+        except Exception as e:
+            st.error(f"Erro ao carregar dados do Excel: {e}")
+            return None
+
+    def _read_monthly_sheet_data(self, ws, month_num):
+        """Lê dados de uma aba de análise mensal"""
+        monthly_data = {}
+        
+        # Para cada variável no mapeamento
+        for variable, col_info in self.monthly_column_mapping.items():
+            start_col = col_info['start_col']
+            start_row, end_row = col_info['rows']
+            
+            from openpyxl.utils import column_index_from_string
+            start_col_num = column_index_from_string(start_col)
+            
+            # Ler dados de cada dia
+            variable_data = {
+                'dias': [],
+                'min': [],
+                'max': [],
+                'avg': [],
+                'outliers': []
+            }
+            
+            # Determinar range de linhas baseado na variável
+            if start_row <= 33:  # Primeira seção
+                day_range = range(3, 34)  # Linhas 3-33 (dias 1-31)
+            else:  # Segunda seção
+                day_range = range(37, 68)  # Linhas 37-67 (dias 1-31)
+            
+            for row_num in day_range:
+                day = row_num - 2 if start_row <= 33 else row_num - 36
+                
+                # Verificar se o dia é válido para o mês
+                try:
+                    datetime(2024, month_num, day)  # Ano irrelevante para validação
+                except ValueError:
+                    continue
+                
+                # Ler valores das colunas Min, Max, Avg, Outliers
+                try:
+                    min_val = ws[f'{get_column_letter(start_col_num)}{row_num}'].value
+                    max_val = ws[f'{get_column_letter(start_col_num + 1)}{row_num}'].value
+                    avg_val = ws[f'{get_column_letter(start_col_num + 2)}{row_num}'].value
+                    out_val = ws[f'{get_column_letter(start_col_num + 3)}{row_num}'].value
+                    
+                    # Só adicionar se houver pelo menos um valor válido
+                    if any(v is not None for v in [min_val, max_val, avg_val, out_val]):
+                        variable_data['dias'].append(day)
+                        variable_data['min'].append(min_val if min_val is not None else 0)
+                        variable_data['max'].append(max_val if max_val is not None else 0)
+                        variable_data['avg'].append(avg_val if avg_val is not None else 0)
+                        variable_data['outliers'].append(out_val if out_val is not None else 0)
+                        
+                except Exception:
+                    continue
+            
+            if variable_data['dias']:  # Só adicionar se houver dados
+                monthly_data[variable] = variable_data
+        
+        return monthly_data
+
+    def show_dashboard(self):
+        """Exibe o dashboard analítico"""
+        st.markdown("---")
+        st.markdown("""
+        <div class="dashboard-header">
+            <h2>📊 Dashboard de Análise Meteorológica</h2>
+            <p>Visualização interativa dos dados processados</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Carregar dados do Excel
+        excel_data = self.load_excel_data_for_dashboard()
+        
+        if not excel_data and not self.consolidated_data:
+            st.warning("Nenhum dado disponível para análise. Execute o processamento primeiro.")
+            return
+        
+        # Filtros do Dashboard
+        self._create_dashboard_filters(excel_data)
+        
+        # Aplicar filtros e mostrar visualizações
+        self._show_filtered_analysis()
+
+    def _create_dashboard_filters(self, excel_data):
+        """Cria os filtros do dashboard"""
+        st.markdown('<div class="dashboard-filters">', unsafe_allow_html=True)
+        st.markdown("### 🔧 Filtros de Análise")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.markdown("**Selecione os Meses para Análise:**")
+            
+            # Identificar meses disponíveis
+            available_months = set()
+            
+            # Meses dos dados consolidados
+            if self.consolidated_data:
+                for timestamp in self.consolidated_data.keys():
+                    available_months.add(timestamp.month)
+            
+            # Meses do Excel
+            if excel_data:
+                available_months.update(excel_data.keys())
+            
+            available_months = sorted(list(available_months))
+            
+            # Criar checkboxes para meses
+            month_names = {
+                1: 'JAN', 2: 'FEV', 3: 'MAR', 4: 'ABR', 
+                5: 'MAI', 6: 'JUN', 7: 'JUL', 8: 'AGO',
+                9: 'SET', 10: 'OUT', 11: 'NOV', 12: 'DEZ'
+            }
+            
+            # Organizar checkboxes em colunas
+            cols = st.columns(6)
+            selected_months = []
+            
+            for i, month_num in enumerate(available_months):
+                col_idx = i % 6
+                with cols[col_idx]:
+                    if st.checkbox(month_names[month_num], key=f"month_{month_num}"):
+                        selected_months.append(month_num)
+        
+        with col2:
+            st.markdown("**Tipo de Análise:**")
+            analysis_type = st.radio(
+                "Selecione o tipo:",
+                ["Análise Diária", "Análise Mensal"],
+                key="analysis_type"
+            )
+        
+        # Salvar seleções no session_state
+        st.session_state.selected_months = selected_months
+        st.session_state.analysis_type = analysis_type
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Mostrar resumo das seleções
+        if selected_months:
+            month_names_selected = [month_names[m] for m in selected_months]
+            st.info(f"📅 **Meses selecionados:** {', '.join(month_names_selected)} | **Tipo:** {analysis_type}")
+        else:
+            st.warning("⚠️ Selecione pelo menos um mês para visualizar as análises.")
+
+    def _show_filtered_analysis(self):
+        """Mostra análises baseadas nos filtros selecionados"""
+        if not hasattr(st.session_state, 'selected_months') or not st.session_state.selected_months:
+            return
+        
+        selected_months = st.session_state.selected_months
+        analysis_type = st.session_state.analysis_type
+        
+        if analysis_type == "Análise Diária":
+            self._show_daily_analysis_dashboard(selected_months)
+        else:
+            self._show_monthly_analysis_dashboard(selected_months)
+
+    def _show_daily_analysis_dashboard(self, selected_months):
+        """Mostra dashboard de análise diária"""
+        st.markdown("### 📈 Análise Diária - Dados Temporais")
+        
+        if not self.consolidated_data:
+            st.warning("Dados consolidados não disponíveis para análise diária.")
+            return
+        
+        # Filtrar dados pelos meses selecionados
+        filtered_data = []
+        for timestamp, data in self.consolidated_data.items():
+            if timestamp.month in selected_months:
+                row = {'Timestamp': timestamp}
+                row.update(data)
+                filtered_data.append(row)
+        
+        if not filtered_data:
+            st.warning("Nenhum dado encontrado para os meses selecionados.")
+            return
+        
+        df_filtered = pd.DataFrame(filtered_data)
+        df_filtered = df_filtered.sort_values('Timestamp')
+        
+        # Estatísticas resumidas
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total de Registros", f"{len(df_filtered):,}")
+        with col2:
+            period_days = (df_filtered['Timestamp'].max() - df_filtered['Timestamp'].min()).days + 1
+            st.metric("Período (dias)", period_days)
+        with col3:
+            avg_records_per_day = len(df_filtered) / period_days if period_days > 0 else 0
+            st.metric("Registros/Dia", f"{avg_records_per_day:.1f}")
+        with col4:
+            months_count = df_filtered['Timestamp'].dt.month.nunique()
+            st.metric("Meses Analisados", months_count)
+        
+        # Gráficos combinados para múltiplos meses
+        self._create_combined_daily_charts(df_filtered, selected_months)
+
+    def _create_combined_daily_charts(self, df, selected_months):
+        """Cria gráficos combinados para análise diária"""
+        df_clean = df.dropna()
+        
+        if len(df_clean) == 0:
+            st.warning("Não há dados suficientes para gerar gráficos.")
+            return
+        
+        # Adicionar coluna de mês para colorir gráficos
+        df_clean = df_clean.copy()
+        df_clean['Mes'] = df_clean['Timestamp'].dt.month
+        df_clean['Mes_Nome'] = df_clean['Mes'].map({
+            1: 'JAN', 2: 'FEV', 3: 'MAR', 4: 'ABR', 
+            5: 'MAI', 6: 'JUN', 7: 'JUL', 8: 'AGO',
+            9: 'SET', 10: 'OUT', 11: 'NOV', 12: 'DEZ'
+        })
+        
+        # Gráfico 1: Temperatura
+        st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+        st.markdown("#### 🌡️ Temperatura ao Longo do Tempo")
+        
+        fig_temp = px.line(df_clean, x='Timestamp', y='Temperatura', 
+                          color='Mes_Nome',
+                          title='Variação da Temperatura por Mês',
+                          labels={'Temperatura': 'Temperatura (°C)', 'Mes_Nome': 'Mês'})
+        fig_temp.update_layout(height=500, showlegend=True)
+        st.plotly_chart(fig_temp, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Gráfico 2: Radiação Solar (Piranômetros)
+        st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+        st.markdown("#### ☀️ Radiação Solar - Piranômetros")
+        
+        fig_solar = go.Figure()
+        
+        colors = ['#FF6B35', '#F7931E', '#FFD23F']
+        piranometer_vars = ['Piranometro_1', 'Piranometro_2', 'Piranometro_Alab']
+        piranometer_names = ['Piranômetro 1', 'Piranômetro 2', 'Piranômetro Alabiótico']
+        
+        for i, (var, name) in enumerate(zip(piranometer_vars, piranometer_names)):
+            if var in df_clean.columns:
+                fig_solar.add_trace(go.Scatter(
+                    x=df_clean['Timestamp'], 
+                    y=df_clean[var],
+                    mode='lines',
+                    name=name,
+                    line=dict(color=colors[i])
+                ))
+        
+        fig_solar.update_layout(
+            title='Radiação Solar - Comparação dos Sensores',
+            xaxis_title="Data/Hora",
+            yaxis_title="Radiação Solar (kW/m²)",
+            height=500,
+            showlegend=True
+        )
+        st.plotly_chart(fig_solar, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Gráfico 3: Umidade e Vento (Eixos duplos)
+        st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+        st.markdown("#### 💨 Umidade Relativa e Velocidade do Vento")
+        
+        fig_env = make_subplots(specs=[[{"secondary_y": True}]])
+        
+        if 'Umidade_Relativa' in df_clean.columns:
+            fig_env.add_trace(
+                go.Scatter(x=df_clean['Timestamp'], y=df_clean['Umidade_Relativa'],
+                         mode='lines', name='Umidade Relativa (%)', 
+                         line=dict(color='#4A90E2')),
+                secondary_y=False,
+            )
+        
+        if 'Velocidade_Vento' in df_clean.columns:
+            fig_env.add_trace(
+                go.Scatter(x=df_clean['Timestamp'], y=df_clean['Velocidade_Vento'],
+                         mode='lines', name='Velocidade do Vento (m/s)', 
+                         line=dict(color='#50C878')),
+                secondary_y=True,
+            )
+        
+        fig_env.update_xaxes(title_text="Data/Hora")
+        fig_env.update_yaxes(title_text="Umidade Relativa (%)", secondary_y=False)
+        fig_env.update_yaxes(title_text="Velocidade do Vento (m/s)", secondary_y=True)
+        fig_env.update_layout(
+            title='Condições Ambientais - Umidade e Vento',
+            height=500,
+            showlegend=True
+        )
+        st.plotly_chart(fig_env, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Gráfico 4: Distribuição por hora do dia (todos os meses)
+        st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+        st.markdown("#### ⏰ Padrões Diários - Médias por Hora")
+        
+        df_hourly = df_clean.copy()
+        df_hourly['Hora'] = df_hourly['Timestamp'].dt.hour
+        
+        # Calcular médias por hora para cada mês
+        hourly_stats = df_hourly.groupby(['Hora', 'Mes_Nome'])[['Temperatura', 'Umidade_Relativa', 'Velocidade_Vento']].mean().reset_index()
+        
+        fig_hourly = px.line(hourly_stats, x='Hora', y='Temperatura', 
+                           color='Mes_Nome',
+                           title='Temperatura Média por Hora do Dia (por Mês)',
+                           labels={'Temperatura': 'Temperatura (°C)', 'Mes_Nome': 'Mês'})
+        fig_hourly.update_layout(height=400)
+        st.plotly_chart(fig_hourly, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    def _show_monthly_analysis_dashboard(self, selected_months):
+        """Mostra dashboard de análise mensal"""
+        st.markdown("### 📊 Análise Mensal - Estatísticas Diárias")
+        
+        # Carregar dados do Excel
+        excel_data = self.load_excel_data_for_dashboard()
+        
+        if not excel_data:
+            st.warning("Dados de análise mensal não disponíveis. Execute o processamento completo primeiro.")
+            return
+        
+        # Filtrar dados pelos meses selecionados
+        filtered_excel_data = {month: data for month, data in excel_data.items() if month in selected_months}
+        
+        if not filtered_excel_data:
+            st.warning("Nenhum dado de análise mensal encontrado para os meses selecionados.")
+            return
+        
+        # Estatísticas resumidas
+        total_variables = 0
+        total_days_with_data = 0
+        
+        for month_data in filtered_excel_data.values():
+            total_variables += len(month_data)
+            for var_data in month_data.values():
+                total_days_with_data += len(var_data['dias'])
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Meses Analisados", len(filtered_excel_data))
+        with col2:
+            st.metric("Variáveis Processadas", total_variables)
+        with col3:
+            st.metric("Dias com Dados", total_days_with_data)
+        with col4:
+            avg_days_per_month = total_days_with_data / len(filtered_excel_data) if len(filtered_excel_data) > 0 else 0
+            st.metric("Média Dias/Mês", f"{avg_days_per_month:.1f}")
+        
+        # Gráficos de barras para estatísticas mensais
+        self._create_monthly_bar_charts(filtered_excel_data, selected_months)
+
+    def _create_monthly_bar_charts(self, excel_data, selected_months):
+        """Cria gráficos de barras para análise mensal"""
+        month_names = {
+            1: 'JAN', 2: 'FEV', 3: 'MAR', 4: 'ABR', 
+            5: 'MAI', 6: 'JUN', 7: 'JUL', 8: 'AGO',
+            9: 'SET', 10: 'OUT', 11: 'NOV', 12: 'DEZ'
+        }
+        
+        # Variáveis principais para gráficos
+        main_variables = ['Temperatura', 'Piranometro_1', 'Piranometro_2', 'Umidade_Relativa', 'Velocidade_Vento']
+        
+        for variable in main_variables:
+            # Verificar se a variável existe nos dados
+            var_data_available = any(variable in month_data for month_data in excel_data.values())
+            
+            if not var_data_available:
+                continue
+            
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown(f"#### 📊 {variable.replace('_', ' ').title()}")
+            
+            # Preparar dados para o gráfico
+            chart_data = []
+            
+            for month_num in selected_months:
+                if month_num not in excel_data or variable not in excel_data[month_num]:
+                    continue
+                
+                var_data = excel_data[month_num][variable]
+                month_name = month_names[month_num]
+                
+                # Calcular estatísticas mensais médias
+                if var_data['avg']:
+                    avg_min = np.mean(var_data['min']) if var_data['min'] else 0
+                    avg_max = np.mean(var_data['max']) if var_data['max'] else 0
+                    avg_avg = np.mean(var_data['avg']) if var_data['avg'] else 0
+                    total_outliers = sum(var_data['outliers']) if var_data['outliers'] else 0
+                    
+                    chart_data.extend([
+                        {'Mês': month_name, 'Estatística': 'Mínimo', 'Valor': avg_min},
+                        {'Mês': month_name, 'Estatística': 'Máximo', 'Valor': avg_max},
+                        {'Mês': month_name, 'Estatística': 'Média', 'Valor': avg_avg},
+                        {'Mês': month_name, 'Estatística': 'Outliers', 'Valor': total_outliers}
+                    ])
+            
+            if chart_data:
+                df_chart = pd.DataFrame(chart_data)
+                
+                # Separar outliers dos outros valores (escalas diferentes)
+                df_values = df_chart[df_chart['Estatística'] != 'Outliers']
+                df_outliers = df_chart[df_chart['Estatística'] == 'Outliers']
+                
+                # Gráfico principal (Min, Max, Média)
+                if not df_values.empty:
+                    fig_main = px.bar(df_values, x='Mês', y='Valor', color='Estatística',
+                                    title=f'{variable.replace("_", " ").title()} - Estatísticas Mensais',
+                                    barmode='group',
+                                    color_discrete_sequence=['#00529C', '#FF6B35', '#50C878'])
+                    fig_main.update_layout(height=400)
+                    st.plotly_chart(fig_main, use_container_width=True)
+                
+                # Gráfico de outliers (escala separada)
+                if not df_outliers.empty:
+                    fig_outliers = px.bar(df_outliers, x='Mês', y='Valor',
+                                        title=f'{variable.replace("_", " ").title()} - Outliers Detectados',
+                                        color_discrete_sequence=['#FF4444'])
+                    fig_outliers.update_layout(height=300)
+                    st.plotly_chart(fig_outliers, use_container_width=True)
+            
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Gráfico comparativo de outliers por variável
+        st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+        st.markdown("#### 🎯 Comparativo de Outliers por Variável")
+        
+        outliers_summary = []
+        for month_num in selected_months:
+            if month_num not in excel_data:
+                continue
+                
+            month_name = month_names[month_num]
+            for variable in main_variables:
+                if variable in excel_data[month_num]:
+                    var_data = excel_data[month_num][variable]
+                    total_outliers = sum(var_data['outliers']) if var_data['outliers'] else 0
+                    outliers_summary.append({
+                        'Mês': month_name,
+                        'Variável': variable.replace('_', ' ').title(),
+                        'Outliers': total_outliers
+                    })
+        
+        if outliers_summary:
+            df_outliers_summary = pd.DataFrame(outliers_summary)
+            fig_outliers_comp = px.bar(df_outliers_summary, x='Variável', y='Outliers', color='Mês',
+                                     title='Comparativo de Outliers por Variável e Mês',
+                                     barmode='group')
+            fig_outliers_comp.update_layout(height=400)
+            st.plotly_chart(fig_outliers_comp, use_container_width=True)
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+
 
 def main():
     # Cabeçalho principal com logo da CSN
@@ -1118,6 +1615,24 @@ def main():
     if 'processor' not in st.session_state:
         st.session_state.processor = ExactWeatherProcessor()
     
+    # Controle de exibição do dashboard
+    if 'show_dashboard' not in st.session_state:
+        st.session_state.show_dashboard = False
+    
+    # Verificar se deve mostrar dashboard
+    if st.session_state.show_dashboard:
+        # Botão para voltar ao processamento
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.button("⬅️ Voltar ao Processamento", use_container_width=True):
+                st.session_state.show_dashboard = False
+                st.rerun()
+        
+        # Mostrar dashboard
+        st.session_state.processor.show_dashboard()
+        return
+    
+    # Interface principal de processamento
     # Sidebar com instruções
     with st.sidebar:
         st.markdown("### Instruções de Uso")
@@ -1129,6 +1644,8 @@ def main():
         **Passo 3:** Clique em "Processar Dados"
         
         **Passo 4:** Baixe o Excel atualizado
+        
+        **Passo 5:** Acesse o Dashboard Analítico
         """)
         
         st.markdown("---")
@@ -1141,7 +1658,8 @@ def main():
         - Detecção de conflitos entre arquivos
         - Mapeamento preciso por timestamp
         - Gráficos de conferência das variáveis
-        - **NOVO:** Análise mensal automática
+        - **Análise mensal automática**
+        - **🆕 Dashboard interativo com filtros**
         
         **Lógica de Busca:**
         - **Diária:** Para 10:00 → busca entre 09:50 e 10:10
@@ -1151,19 +1669,17 @@ def main():
         """)
         
         st.markdown("---")
-        st.markdown("### Mapeamento de Colunas")
+        st.markdown("### Dashboard Analítico")
         st.markdown("""
-        **Análise Diária:**
-        - **Temperatura**: Colunas B-AF (Dias 1-31)
-        - **Piranômetro 1**: Colunas AG-BK (Dias 1-31)
-        - **Piranômetro 2**: Colunas BL-CP (Dias 1-31)
-        - **Piranômetro Alabiótico**: Colunas CQ-DU (Dias 1-31)
-        - **Umidade**: Colunas DV-EZ (Dias 1-31)
-        - **Vento**: Colunas FA-GE (Dias 1-31)
+        **Filtros Disponíveis:**
+        - ✅ Seleção múltipla de meses (JAN, FEV, etc.)
+        - ✅ Tipo de análise (Diária vs Mensal)
         
-        **Análise Mensal:**
-        - **9 variáveis** com Min/Max/Avg/Outliers
-        - **Processamento automático** de estatísticas diárias
+        **Visualizações:**
+        - 📈 Gráficos temporais (análise diária)
+        - 📊 Gráficos de barras (análise mensal)
+        - 🎯 Comparativos de outliers
+        - ⏰ Padrões diários e sazonais
         """)
     
     # Layout principal
@@ -1228,17 +1744,27 @@ def main():
                                 for sheet in st.session_state.processor.processed_sheets:
                                     st.markdown(f"- {sheet}")
                             
-                            # Botão de download
-                            updated_excel = st.session_state.processor.get_updated_excel_file()
-                            if updated_excel:
-                                st.markdown("### Download do Arquivo Atualizado")
-                                st.download_button(
-                                    label="Baixar Excel Atualizado",
-                                    data=updated_excel,
-                                    file_name=f"analise_completa_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                    use_container_width=True
-                                )
+                            # Botões de ação
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                # Botão de download
+                                updated_excel = st.session_state.processor.get_updated_excel_file()
+                                if updated_excel:
+                                    st.download_button(
+                                        label="📥 Baixar Excel Atualizado",
+                                        data=updated_excel,
+                                        file_name=f"analise_completa_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        use_container_width=True
+                                    )
+                            
+                            with col2:
+                                # Botão do dashboard
+                                if st.button("📊 Ver Dashboard de Análise", use_container_width=True):
+                                    st.session_state.show_dashboard = True
+                                    st.rerun()
+                                    
                         else:
                             st.error(f"{message}")
                     else:
@@ -1265,6 +1791,7 @@ def main():
             - Processa 9 variáveis meteorológicas
             - Não preenche dados que não existem
             - Gera gráficos para conferência visual dos dados
+            - **🆕 Dashboard interativo para análise avançada**
             """)
     
     # Footer
@@ -1272,7 +1799,7 @@ def main():
     st.markdown("""
     <div style="text-align: center; color: #666; padding: 1rem;">
         <p>Processador de Dados Meteorológicos | Usina Geradora Floriano</p>
-        <p><small>Versão 2.0 - Análises Diárias e Mensais</small></p>
+        <p><small>Versão 3.0 - Análises Diárias, Mensais e Dashboard Interativo</small></p>
     </div>
     """, unsafe_allow_html=True)
 
