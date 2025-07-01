@@ -1615,29 +1615,10 @@ def main():
     if 'processor' not in st.session_state:
         st.session_state.processor = ExactWeatherProcessor()
     
-    # Controle de exibição do dashboard
-    if 'show_dashboard' not in st.session_state:
-        st.session_state.show_dashboard = False
-    
     # Controle para manter dados após rerun
     if 'processing_completed' not in st.session_state:
         st.session_state.processing_completed = False
     
-    # Verificar se deve mostrar dashboard
-    if st.session_state.show_dashboard:
-        # Botão para voltar ao processamento
-        st.markdown("---")
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            if st.button("⬅️ Voltar ao Processamento", use_container_width=True, key="back_to_processing"):
-                st.session_state.show_dashboard = False
-                st.rerun()
-        
-        # Mostrar dashboard
-        st.session_state.processor.show_dashboard()
-        return
-    
-    # Interface principal de processamento
     # Sidebar com instruções
     with st.sidebar:
         st.markdown("### Instruções de Uso")
@@ -1650,7 +1631,7 @@ def main():
         
         **Passo 4:** Baixe o Excel atualizado
         
-        **Passo 5:** Acesse o Dashboard Analítico
+        **Passo 5:** Visualize o Dashboard Analítico
         """)
         
         st.markdown("---")
@@ -1760,18 +1741,20 @@ def main():
                                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                     use_container_width=True
                                 )
-                            
-                            # Botão do dashboard
-                            st.markdown("### Dashboard de Análise")
-                            if st.button("📊 Ver Dashboard de Análise", use_container_width=True, key="show_dashboard_btn"):
-                                st.session_state.show_dashboard = True
-                                st.session_state.processing_completed = True
-                                st.rerun()
+                                
+                            # Marcar processamento como concluído
+                            st.session_state.processing_completed = True
                                     
                         else:
                             st.error(f"{message}")
                     else:
                         st.error("Erro ao processar arquivos .dat")
+    
+    # Exibir Dashboard automaticamente se processamento foi concluído
+    if st.session_state.processing_completed and st.session_state.processor.consolidated_data:
+        st.markdown("---")
+        st.markdown("## Dashboard de Análise")
+        st.session_state.processor.show_dashboard()
     
     # Informações adicionais
     if not excel_file or not dat_files:
