@@ -1744,26 +1744,23 @@ def main():
                                 for sheet in st.session_state.processor.processed_sheets:
                                     st.markdown(f"- {sheet}")
                             
-                            # Botões de ação
-                            col1, col2 = st.columns(2)
+                            # Botão de download
+                            st.markdown("### Download do Arquivo Atualizado")
+                            updated_excel = st.session_state.processor.get_updated_excel_file()
+                            if updated_excel:
+                                st.download_button(
+                                    label="📥 Baixar Excel Atualizado",
+                                    data=updated_excel,
+                                    file_name=f"analise_completa_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    use_container_width=True
+                                )
                             
-                            with col1:
-                                # Botão de download
-                                updated_excel = st.session_state.processor.get_updated_excel_file()
-                                if updated_excel:
-                                    st.download_button(
-                                        label="📥 Baixar Excel Atualizado",
-                                        data=updated_excel,
-                                        file_name=f"analise_completa_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                        use_container_width=True
-                                    )
-                            
-                            with col2:
-                                # Botão do dashboard
-                                if st.button("📊 Ver Dashboard de Análise", use_container_width=True):
-                                    st.session_state.show_dashboard = True
-                                    st.rerun()
+                            # Botão do dashboard
+                            st.markdown("### Dashboard de Análise")
+                            if st.button("📊 Ver Dashboard de Análise", use_container_width=True):
+                                st.session_state.show_dashboard = True
+                                st.rerun()
                                     
                         else:
                             st.error(f"{message}")
